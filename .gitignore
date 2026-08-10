@@ -22,4 +22,13 @@
 /nbbuild/
 /dist/
 /nbdist/
-/.nb-gradle/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+crash.log
+crash.*.log/.nb-gradle/
+
