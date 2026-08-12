@@ -256,3 +256,91 @@ target cluster is determined solely by the active context in
 `~/.kube/config`. The local K3s environment can therefore coexist
 with the Azure AKS environment without requiring K3s to be
 uninstalled.
+
+---
+
+## 6. AKS OIDC Issuer Feature Cannot Be Disabled
+
+### Symptom
+`terraform apply` failed while updating the AKS cluster (triggered by
+adding the Key Vault CSI provider) with:
+```
+Error: updating Kubernetes Cluster: unexpected status 400 (400 Bad Request):
+{
+  "code": "OIDCIssuerFeatureCannotBeDisabled",
+  "message": "OIDC issuer feature cannot be disabled."
+}
+```
+The plan showed:
+```
+- oidc_issuer_enabled = true -> null
+```
+
+### Diagnosis
+The `oidc_issuer_enabled` attribute was never explicitly set in
+`aks.tf`. Azure enables the OIDC issuer by default on new AKS
+clusters, but the Terraform configuration's implicit default (unset
+= null/false) caused Terraform to attempt disabling a feature that
+Azure does not allow to be turned off once active.
+
+### Resolution
+`oidc_issuer_enabled = true` was added explicitly to the
+`azurerm_kubernetes_cluster` resource block, so Terraform's desired
+state matches the actual state on Azure and no longer attempts to
+disable it.
+
+### Validation
+```
+terraform plan
+```
+No further changes were proposed for `oidc_issuer_enabled`.
+```
+terraform apply
+```
+The Key Vault, the demo secret, and the two role assignments (created
+earlier in the same run before the error) were left untouched; only
+the AKS cluster update succeeded on retry.
+
+---
+
+## 7. CSI Driver Failing to Authenticate — Multiple Managed Identities
+
+### Symptom
+The test pod stayed stuck in `ContainerCreating`. `kubectl describe pod`
+showed:
+```
+Warning  FailedMount  ...  kubelet
+MountVolume.SetUp failed for volume "secrets-store": ...
+ManagedIdentityCredential: failed to authenticate a system assigned identity.
+The endpoint responded with {"error":"invalid_request",
+"error_description":"Multiple user assigned identities exist,
+please specify the clientId / resourceId of the identity in the
+token request"}
+```
+
+### Diagnosis
+The AKS cluster has more than one managed identity attached: the
+kubelet identity (used for ACR pulls) and the identity automatically
+created by the `key_vault_secrets_provider` add-on (used for Key
+Vault access). The `SecretProviderClass` was configured with
+`useVMManagedIdentity: "true"` but without specifying which identity
+to use, making the authentication request ambiguous.
+
+### Resolution
+The CSI driver identity's `clientId` was retrieved:
+```
+az aks show --resource-group rg-hajar-azure-project-dev \
+  --name aks-hajar-azure-project-dev \
+  --query addonProfiles.azureKeyvaultSecretsProvider.identity.clientId -o tsv
+```
+It was added explicitly to `SecretProviderClass` via
+`userAssignedIdentityID`.
+
+### Validation
+```
+kubectl apply -f secret-provider-class.yaml
+kubectl delete pod test-secret-pod
+kubectl apply -f test-secret-pod.yaml
+kubectl exec test-secret-pod -- cat /mnt/secrets/demo-secret
+```
+The pod reached `Running` and returned the expected secret value.

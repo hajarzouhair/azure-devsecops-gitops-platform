@@ -23,3 +23,7 @@ output "aks_cluster_name" {
   value       = azurerm_kubernetes_cluster.main.name
 }
 
+output "key_vault_name" {
+  description = "Nom du Key Vault (utilisé dans le SecretProviderClass Kubernetes)"
+  value       = azurerm_key_vault.main.name
+}

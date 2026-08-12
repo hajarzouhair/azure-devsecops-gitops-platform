@@ -3,8 +3,14 @@ resource "azurerm_kubernetes_cluster" "main" {
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
 
-  # Préfixe utilisé pour le DNS du cluster (ex: mon-cluster-xxxxx.hcp.francecentral.azmk8s.io)
   dns_prefix = "${var.project_name}-${var.environment}"
+
+  # Azure active cette fonctionnalité par défaut sur les nouveaux clusters
+  # et refuse de la désactiver ensuite. On la déclare explicitement à
+  # "true" pour que Terraform ne tente plus de la remettre à false.
+  # Elle sera utile plus tard si on active Workload Identity (fédération
+  # OIDC entre AKS et Azure AD, alternative moderne au CSI Key Vault).
+  oidc_issuer_enabled = true
 
   default_node_pool {
     name       = "system"
@@ -47,3 +53,4 @@ resource "azurerm_role_assignment" "aks_acr_pull" {
   scope                           = azurerm_container_registry.main.id
   skip_service_principal_aad_check = true
 }
+
