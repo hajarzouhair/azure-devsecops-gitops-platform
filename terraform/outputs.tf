@@ -12,3 +12,14 @@ output "aks_subnet_id" {
   description = "ID du sous-réseau réservé à AKS (utile pour l'étape suivante)"
   value       = azurerm_subnet.aks.id
 }
+
+output "acr_login_server" {
+  description = "URL du registre ACR (utilisée dans le pipeline GitLab CI pour push/pull)"
+  value       = azurerm_container_registry.main.login_server
+}
+
+output "aks_cluster_name" {
+  description = "Nom du cluster AKS (utilisé avec `az aks get-credentials`)"
+  value       = azurerm_kubernetes_cluster.main.name
+}
+

@@ -32,3 +32,6 @@
 crash.log
 crash.*.log/.nb-gradle/
 
+# Kubernetes / kubeconfig
+kubeconfig
+*.kubeconfig
