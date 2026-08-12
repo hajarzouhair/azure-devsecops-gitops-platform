@@ -62,7 +62,7 @@ container_scan:
   needs:
     - build
   script:
-    - trivy image --exit-code 0 --severity HIGH,CRITICAL --input image.tar
+    - trivy image --exit-code 1 --severity HIGH,CRITICAL --input image.tar
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
 
