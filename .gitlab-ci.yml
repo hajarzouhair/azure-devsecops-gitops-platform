@@ -56,7 +56,9 @@ include:
 # --------------------------------------------------
 container_scan:
   stage: scan
-  image: aquasec/trivy:latest
+  image:
+    name: aquasec/trivy:0.66.0
+    entrypoint: [""]
   needs:
     - build
   script:
