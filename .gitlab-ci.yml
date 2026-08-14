@@ -84,8 +84,67 @@ push_to_acr:
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
 
+# --------------------------------------------------------------------------
+# 6. Signature de l'image (provenance/intégrité) + génération d'un SBOM
+# --------------------------------------------------------------------------
+sign_and_sbom:
+  stage: sign
+  image: docker:24
+  services:
+    - docker:24-dind
+
+  needs: ["push_to_acr"]
+
+  id_tokens:
+    SIGSTORE_ID_TOKEN:
+      aud: sigstore
+
+  before_script:
+    # Install Cosign
+    - wget -O /usr/local/bin/cosign https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
+    - chmod +x /usr/local/bin/cosign
+
+    # Install Syft
+    - apk add --no-cache curl
+    - curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+    # Verify tools
+    - cosign version
+    - syft version
+
+  script:
+    # Authenticate to Azure Container Registry
+    - echo "$ACR_PASSWORD" | docker login "$ACR_LOGIN_SERVER" -u "$ACR_USERNAME" --password-stdin
+
+    # Resolve the immutable image digest
+    - DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_NAME:$IMAGE_TAG" || true)
+
+    # Pull the image from ACR because the current Docker daemon
+    # may not contain the image after switching jobs.
+    - docker pull "$IMAGE_NAME:$IMAGE_TAG"
+
+    # Generate SBOM
+    - syft "$IMAGE_NAME:$IMAGE_TAG" -o spdx-json > sbom.json
+
+    # Sign the image using GitLab OIDC + Sigstore
+    - cosign sign --yes "$IMAGE_NAME:$IMAGE_TAG"
+
+    # Attach SBOM to the image
+    - cosign attach sbom --sbom sbom.json "$IMAGE_NAME:$IMAGE_TAG"
+
+    # Sign the SBOM attachment
+    - cosign sign --yes --attachment sbom "$IMAGE_NAME:$IMAGE_TAG"
+
+  artifacts:
+    paths:
+      - sbom.json
+    expire_in: 30 days
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master"'
+
 # --------------------------------------------------
-# 6. Deployment
+# 7. Deployment
 # --------------------------------------------------
 # Deployment will be implemented through Argo CD
 # using the GitOps workflow.

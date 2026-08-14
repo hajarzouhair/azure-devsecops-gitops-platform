@@ -11,7 +11,7 @@ resource "azurerm_key_vault" "main" {
   enable_rbac_authorization = true
 
   # Permet la restauration en cas de suppression accidentelle
-  purge_protection_enabled = false
+  purge_protection_enabled   = false
   soft_delete_retention_days = 7
 
   tags = {
