@@ -86,55 +86,103 @@ push_to_acr:
     - if: '$CI_COMMIT_BRANCH == "master"'
 
 # --------------------------------------------------------------------------
-# 6. Signature de l'image (provenance/intégrité) + génération d'un SBOM
+# Cosign signature + SBOM
+#
+# The image is:
+#   1. Retrieved from ACR
+#   2. Identified by its immutable digest
+#   3. Signed with Cosign using GitLab OIDC / Sigstore
+#   4. Scanned with Syft
+#   5. The SBOM is attached as a signed attestation
+#
+# The digest is deliberately used instead of the tag because a tag can
+# theoretically be moved to another image.
 # --------------------------------------------------------------------------
 sign_and_sbom:
   stage: sign
+
   image: docker:24
+
   services:
     - docker:24-dind
 
-  needs: ["push_to_acr"]
+  needs:
+    - push_to_acr
 
+  # GitLab OIDC token used by Cosign for keyless signing.
   id_tokens:
     SIGSTORE_ID_TOKEN:
       aud: sigstore
 
   before_script:
+
     # Install Cosign
-    - wget -O /usr/local/bin/cosign https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
+    - wget -O /usr/local/bin/cosign
+        https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
     - chmod +x /usr/local/bin/cosign
 
-    # Install Syft
+    # Install curl
     - apk add --no-cache curl
-    - curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
 
-    # Verify tools
+    # Install Syft
+    - curl -sSfL
+        https://raw.githubusercontent.com/anchore/syft/main/install.sh
+        | sh -s -- -b /usr/local/bin
+
+    # Display versions for troubleshooting / reproducibility
     - cosign version
     - syft version
 
   script:
-    # Authenticate to Azure Container Registry
-    - echo "$ACR_PASSWORD" | docker login "$ACR_LOGIN_SERVER" -u "$ACR_USERNAME" --password-stdin
 
-    # Resolve the immutable image digest
-    - DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_NAME:$IMAGE_TAG" || true)
+    # --------------------------------------------------------------
+    # Authenticate against Azure Container Registry
+    # --------------------------------------------------------------
+    - echo "$ACR_PASSWORD" | docker login "$ACR_LOGIN_SERVER"
+        -u "$ACR_USERNAME"
+        --password-stdin
 
-    # Pull the image from ACR because the current Docker daemon
-    # may not contain the image after switching jobs.
+    # --------------------------------------------------------------
+    # Pull the exact image pushed by the previous job
+    # --------------------------------------------------------------
     - docker pull "$IMAGE_NAME:$IMAGE_TAG"
 
-    # Generate SBOM
-    - syft "$IMAGE_NAME:$IMAGE_TAG" -o spdx-json > sbom.json
+    # --------------------------------------------------------------
+    # Retrieve the immutable image digest
+    # Example:
+    # acr.azurecr.io/portfolio-app@sha256:abc123...
+    # --------------------------------------------------------------
+    - IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_NAME:$IMAGE_TAG")
 
-    # Sign the image using GitLab OIDC + Sigstore
-    - cosign sign --yes "$IMAGE_NAME:$IMAGE_TAG"
+    - echo "Image digest:"
+    - echo "$IMAGE_DIGEST"
 
-    # Attach SBOM to the image
-    - cosign attach sbom --sbom sbom.json "$IMAGE_NAME:$IMAGE_TAG"
+    # --------------------------------------------------------------
+    # Generate SBOM from the exact image
+    # --------------------------------------------------------------
+    - syft "$IMAGE_DIGEST" -o spdx-json > sbom.json
 
-    # Sign the SBOM attachment
-    - cosign sign --yes --attachment sbom "$IMAGE_NAME:$IMAGE_TAG"
+    # --------------------------------------------------------------
+    # Keyless signing with Cosign / Sigstore
+    #
+    # The image is signed by immutable digest, not by tag.
+    # --------------------------------------------------------------
+    - cosign sign
+        --yes
+        --registry-referrers-mode oci-1-1
+        "$IMAGE_DIGEST"
+
+    # --------------------------------------------------------------
+    # Attach the SBOM as a signed attestation
+    #
+    # SPDX is used as the SBOM predicate type.
+    # --------------------------------------------------------------
+    - cosign attest
+        --yes
+        --type https://spdx.dev/Document
+        --predicate sbom.json
+        --registry-referrers-mode oci-1-1
+        "$IMAGE_DIGEST"
 
   artifacts:
     paths:
