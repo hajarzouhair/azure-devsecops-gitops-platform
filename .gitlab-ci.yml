@@ -11,7 +11,9 @@ variables:
   IMAGE_TAG: "$CI_COMMIT_SHORT_SHA"
   MAVEN_OPTS: "-Dmaven.repo.local=.m2/repository"
 
-# Cache Maven entre les pipelines
+  # Enable OCI 1.1 referrers support in Cosign
+  COSIGN_EXPERIMENTAL: "1"
+
 cache:
   key: "$CI_COMMIT_REF_SLUG"
   paths:
@@ -20,84 +22,100 @@ cache:
 # --------------------------------------------------
 # 1. Unit tests
 # --------------------------------------------------
+
 unit_test:
   stage: test
   image: maven:3.9-eclipse-temurin-21
+
   script:
     - mvn -B test
+
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
+
 
 # --------------------------------------------------
 # 2. Docker build
 # --------------------------------------------------
+
 build:
   stage: build
   image: docker:24
+
   services:
     - docker:24-dind
+
   script:
     - docker build -t "$IMAGE_NAME:$IMAGE_TAG" .
     - docker save "$IMAGE_NAME:$IMAGE_TAG" -o image.tar
+
   artifacts:
     paths:
       - image.tar
     expire_in: 1 hour
+
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
+
 
 # --------------------------------------------------
 # 3. SAST
 # --------------------------------------------------
+
 include:
   - template: Security/SAST.gitlab-ci.yml
+
 
 # --------------------------------------------------
 # 4. Container vulnerability scanning
 # --------------------------------------------------
+
 container_scan:
   stage: scan
+
   image:
     name: aquasec/trivy:0.66.0
     entrypoint: [""]
+
   needs:
     - build
+
   script:
     - trivy image --exit-code 1 --severity HIGH,CRITICAL --input image.tar
+
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
+
 
 # --------------------------------------------------
 # 5. Push image to Azure Container Registry
 # --------------------------------------------------
+
 push_to_acr:
   stage: push
+
   image: docker:24
+
   services:
     - docker:24-dind
+
   needs:
     - build
     - container_scan
+
   script:
     - docker load -i image.tar
     - echo "$ACR_PASSWORD" | docker login "$ACR_LOGIN_SERVER" -u "$ACR_USERNAME" --password-stdin
     - docker push "$IMAGE_NAME:$IMAGE_TAG"
+
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
 
-# --------------------------------------------------------------------------
-# Cosign signature + SBOM
-#
-# The image is:
-#   1. Retrieved from ACR
-#   2. Identified by its immutable digest
-#   3. Signed with Cosign using GitLab OIDC / Sigstore
-#   4. Scanned with Syft
-#   5. The SBOM is attached as a signed attestation
-#
-# The digest is deliberately used instead of the tag because a tag can
-# theoretically be moved to another image.
-# --------------------------------------------------------------------------
+
+# --------------------------------------------------
+# 6. Cosign signature + SBOM attestation
+# --------------------------------------------------
+
 sign_and_sbom:
   stage: sign
 
@@ -109,74 +127,80 @@ sign_and_sbom:
   needs:
     - push_to_acr
 
-  # GitLab OIDC token used by Cosign for keyless signing.
   id_tokens:
     SIGSTORE_ID_TOKEN:
       aud: sigstore
 
   before_script:
 
+    # -----------------------------------------------
     # Install Cosign
-    - wget -O /usr/local/bin/cosign
-        https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
+    # -----------------------------------------------
+
+    - wget -O /usr/local/bin/cosign https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
     - chmod +x /usr/local/bin/cosign
 
+    # -----------------------------------------------
     # Install curl
+    # -----------------------------------------------
+
     - apk add --no-cache curl
 
+    # -----------------------------------------------
     # Install Syft
-    - curl -sSfL
-        https://raw.githubusercontent.com/anchore/syft/main/install.sh
-        | sh -s -- -b /usr/local/bin
+    # -----------------------------------------------
 
-    # Display versions for troubleshooting / reproducibility
+    - curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+    # -----------------------------------------------
+    # Display versions
+    # -----------------------------------------------
+
     - cosign version
     - syft version
 
   script:
 
-    # --------------------------------------------------------------
-    # Authenticate against Azure Container Registry
-    # --------------------------------------------------------------
-    - echo "$ACR_PASSWORD" | docker login "$ACR_LOGIN_SERVER"
-        -u "$ACR_USERNAME"
-        --password-stdin
+    # -----------------------------------------------
+    # Authenticate against ACR
+    # -----------------------------------------------
 
-    # --------------------------------------------------------------
-    # Pull the exact image pushed by the previous job
-    # --------------------------------------------------------------
+    - echo "$ACR_PASSWORD" | docker login "$ACR_LOGIN_SERVER" -u "$ACR_USERNAME" --password-stdin
+
+    # -----------------------------------------------
+    # Pull exact image from ACR
+    # -----------------------------------------------
+
     - docker pull "$IMAGE_NAME:$IMAGE_TAG"
 
-    # --------------------------------------------------------------
-    # Retrieve the immutable image digest
-    # Example:
-    # acr.azurecr.io/portfolio-app@sha256:abc123...
-    # --------------------------------------------------------------
+    # -----------------------------------------------
+    # Retrieve immutable digest
+    # -----------------------------------------------
+
     - IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_NAME:$IMAGE_TAG")
 
     - echo "Image digest:"
     - echo "$IMAGE_DIGEST"
 
-    # --------------------------------------------------------------
-    # Generate SBOM from the exact image
-    # --------------------------------------------------------------
+    # -----------------------------------------------
+    # Generate SBOM from exact image digest
+    # -----------------------------------------------
+
     - syft "$IMAGE_DIGEST" -o spdx-json > sbom.json
 
-    # --------------------------------------------------------------
-    # Keyless signing with Cosign / Sigstore
-    #
-    # The image is signed by immutable digest, not by tag.
-    # --------------------------------------------------------------
+    # -----------------------------------------------
+    # Sign image using Cosign / Sigstore
+    # -----------------------------------------------
+
     - cosign sign
         --yes
         --registry-referrers-mode oci-1-1
         "$IMAGE_DIGEST"
 
-    # --------------------------------------------------------------
-    # Attach the SBOM as a signed attestation
-    #
-    # SPDX is used as the SBOM predicate type.
-    # --------------------------------------------------------------
+    # -----------------------------------------------
+    # Create signed SPDX SBOM attestation
+    # -----------------------------------------------
+
     - cosign attest
         --yes
         --type https://spdx.dev/Document
@@ -192,8 +216,10 @@ sign_and_sbom:
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
 
+
 # --------------------------------------------------
 # 7. Deployment
 # --------------------------------------------------
+
 # Deployment will be implemented through Argo CD
 # using the GitOps workflow.
