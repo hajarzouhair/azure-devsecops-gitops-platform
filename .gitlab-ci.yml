@@ -125,6 +125,9 @@ sign_and_sbom:
   needs:
     - push_to_acr
 
+  variables:
+    COSIGN_EXPERIMENTAL: "1"
+
   id_tokens:
     SIGSTORE_ID_TOKEN:
       aud: sigstore
