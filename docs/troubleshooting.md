@@ -344,3 +344,37 @@ kubectl apply -f test-secret-pod.yaml
 kubectl exec test-secret-pod -- cat /mnt/secrets/demo-secret
 ```
 The pod reached `Running` and returned the expected secret value.
+
+---
+
+## 8. Trivy Security Gate Blocking the Pipeline
+
+### Symptom
+The `container_scan` job failed after enabling:
+```
+trivy image --exit-code 1 --severity HIGH,CRITICAL --input image.tar
+```
+
+### Diagnosis
+The Trivy scanner itself executed successfully and detected
+vulnerabilities in both the Alpine base image and the Java
+dependencies. The scan reported:
+- 3 HIGH vulnerabilities in the Alpine base image
+- 15 HIGH vulnerabilities in Java dependencies
+- 3 CRITICAL vulnerabilities in Java dependencies
+
+Because `--exit-code 1` was configured, Trivy returned exit code 1
+when HIGH or CRITICAL vulnerabilities were detected.
+
+### Resolution
+The failure was intentional: the Trivy scan acts as a security gate
+preventing vulnerable images from being pushed to ACR. The
+application dependencies and base image must be updated to reduce
+the detected vulnerabilities before allowing the pipeline to
+continue.
+
+### Validation
+The pipeline should be rerun after updating the affected
+dependencies and rebuilding the container image. The expected result
+is that the `container_scan` job completes successfully with no
+blocking HIGH/CRITICAL vulnerabilities.
