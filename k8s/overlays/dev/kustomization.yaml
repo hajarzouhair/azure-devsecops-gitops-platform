@@ -4,22 +4,24 @@ kind: Kustomization
 namespace: dev
 
 resources:
-  - ../../base
-  - ../../security/network-policies
+- ../../base
+- ../../security/network-policies
 
-images:
-  - name: portfolio-app
     # Le tag suit désormais le commit SHA comme en
     # staging — cohérent avec la policy Kyverno "disallow-latest-tag"
     # et bien plus traçable que "latest", même en dev.
-    newName: acrhajarazureprojectdev.azurecr.io/portfolio-app
-    newTag: 5f72be3f
+images:
+- name: acrhajarazureprojectdev.azurecr.io/portfolio-app
+  newName: acrhajarazureprojectdev.azurecr.io/portfolio-app
+  newTag: b41de090
+- name: portfolio-app
+  newName: acrhajarazureprojectdev.azurecr.io/portfolio-app
+  newTag: 5f72be3f
 
 replicas:
-  - name: portfolio-app
-    count: 1
+- count: 1
+  name: portfolio-app
 
 labels:
-  - pairs:
-      environment: dev
-
+- pairs:
+    environment: dev
