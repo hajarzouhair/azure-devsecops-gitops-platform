@@ -25,9 +25,11 @@ WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
 
 # Bonne pratique sécurité : ne pas exécuter en root dans le conteneur.
-RUN addgroup -S spring && adduser -S spring -G spring
-USER spring
+# UID/GID numériques fixes (1001) obligatoires : Kubernetes doit pouvoir
+# vérifier que le conteneur ne tourne pas en root (runAsNonRoot dans
+# deployment.yaml), et ne peut pas le faire avec un simple nom d'utilisateur.
+RUN addgroup -g 1001 -S spring && adduser -u 1001 -S spring -G spring
+USER 1001
 
 EXPOSE 8080
-
 ENTRYPOINT ["java", "-jar", "app.jar"]

@@ -17,10 +17,15 @@ spec:
       containers:
         - name: portfolio-app
           # L'image réelle (registre + tag) est injectée par l'overlay
-          # de chaque environnement 
+          # de chaque environnement — ne pas coder d'image ici.
           image: portfolio-app
           securityContext:
             runAsNonRoot: true
+            # UID numérique explicite, doit correspondre à celui créé
+            # dans le Dockerfile (adduser -u 1001). Sans ça, Kubernetes
+            # ne peut pas vérifier qu'un utilisateur nommé "spring" est
+            # bien non-root, et bloque le conteneur par sécurité.
+            runAsUser: 1001
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: false
             capabilities:
@@ -28,7 +33,7 @@ spec:
                 - ALL
           ports:
             - containerPort: 8080
-          #j'ai défini une limite des ressources pour la stabilité du cluster
+          # Limites de ressources : indispensable en prod
           resources:
             requests:
               cpu: "100m"
@@ -36,6 +41,8 @@ spec:
             limits:
               cpu: "500m"
               memory: "512Mi"
+          # Probes Spring Boot Actuator (à activer côté app si pas déjà fait :
+          # dépendance spring-boot-starter-actuator dans le pom.xml).
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
@@ -59,4 +66,3 @@ spec:
             readOnly: true
             volumeAttributes:
               secretProviderClass: demo-secret-provider
-
