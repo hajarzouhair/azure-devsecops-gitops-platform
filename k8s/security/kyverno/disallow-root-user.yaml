@@ -1,0 +1,30 @@
+# Interdit tout pod qui tenterait de tourner en root (UID 0).
+# Mon Dockerfile crée déjà un utilisateur "spring" non-root — cette
+# policy garantit qu'aucun futur changement ne réintroduise le
+# problème sans être bloqué explicitement.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-root-user
+spec:
+  # "Enforce" plutôt que "Audit" : on bloque activement, on ne se
+  # contente pas de logguer — cohérent avec Trivy en mode bloquant
+  # dans le pipeline.
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: check-runAsNonRoot
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "Les conteneurs doivent définir runAsNonRoot: true."
+        pattern:
+          spec:
+            =(securityContext):
+              =(runAsNonRoot): "true"
+            containers:
+              - =(securityContext):
+                  =(runAsNonRoot): "true"

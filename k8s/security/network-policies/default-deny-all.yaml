@@ -1,0 +1,13 @@
+# Bloque TOUT trafic entrant et sortant par défaut dans le namespace.
+# Rien ne passe tant qu'une policy explicite ne l'autorise pas —
+# c'est la base saine avant d'ajouter des exceptions ciblées.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: dev
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress

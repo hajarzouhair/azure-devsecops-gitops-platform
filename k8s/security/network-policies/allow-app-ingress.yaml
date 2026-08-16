@@ -1,0 +1,26 @@
+# Autorise l'ingress vers portfolio-app UNIQUEMENT sur le port 8080
+# (celui exposé par le Service). Sans ça, même un appel légitime
+# vers l'app serait bloqué par le deny-all.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-app-ingress
+  namespace: dev
+spec:
+  podSelector:
+    matchLabels:
+      app: portfolio-app
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 8080
+      # Pas de "from" précisé ici = en Kubernetes, l'absence du champ
+      # "from" autorise TOUTES les sources sur le port listé (et pas
+      # seulement le namespace, contrairement à ce qu'un "from: []"
+      # vide ferait). C'est volontaire ici : ça permet à la fois à
+      # ArgoCD/kubelet (probes) et à Prometheus (namespace monitoring)
+      # de contacter l'app sans règle supplémentaire. À restreindre
+      # avec un vrai "from" plus tard si un ingress controller externe
+      # est ajouté au projet.

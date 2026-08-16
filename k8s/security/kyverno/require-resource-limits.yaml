@@ -1,0 +1,30 @@
+# Exige que tout pod déclare requests/limits CPU et mémoire.
+# Évite qu'un pod mal configuré consomme toutes les ressources du
+# nœud et affame les autres — particulièrement important sur un
+# cluster à 1 seul nœud comme le mien.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-requests-limits
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "Chaque conteneur doit définir resources.requests et resources.limits (cpu + memory)."
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  requests:
+                    cpu: "?*"
+                    memory: "?*"
+                  limits:
+                    cpu: "?*"
+                    memory: "?*"

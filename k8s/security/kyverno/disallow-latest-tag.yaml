@@ -1,0 +1,22 @@
+# Interdit de déployer une image taguée "latest" — force la
+# traçabilité (on doit savoir EXACTEMENT quelle version tourne).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-latest-tag
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-image-tag
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "L'image ne doit pas utiliser le tag 'latest' (ou l'absence de tag)."
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest"

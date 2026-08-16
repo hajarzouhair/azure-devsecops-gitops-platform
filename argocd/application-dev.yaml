@@ -1,0 +1,26 @@
+# À appliquer avec : kubectl apply -f argocd/application-dev.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: portfolio-app-dev
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://gitlab.com/hajarzouhair/hajar-azure-project.git
+    targetRevision: master
+    path: k8s/overlays/dev
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dev
+
+  syncPolicy:
+    automated:
+      # Corrige automatiquement toute dérive entre Git et le cluster
+      selfHeal: true
+      # Supprime les ressources retirées du repo.
+      prune: true
+    syncOptions:
+      - CreateNamespace=true
