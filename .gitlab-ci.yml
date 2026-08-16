@@ -215,7 +215,8 @@ update_manifest:
     - git add k8s/overlays/dev/kustomization.yaml
     # [skip ci] est essentiel : sans ça, ce commit relance le pipeline
     # à l'infini (nouveau commit -> nouveau build -> nouveau commit -> ...).
-    - git commit -m "chore: update dev image tag to $IMAGE_TAG [skip ci]" || echo "Rien à commit (tag déjà à jour)"
+    - git commit -m "chore(dev) update image tag to $IMAGE_TAG [skip ci]" || echo "Rien a commit, tag deja a jour"
     - git push origin HEAD:master
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
+
