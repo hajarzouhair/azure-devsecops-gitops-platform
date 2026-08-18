@@ -16,14 +16,13 @@ prometheus:
         effect: NoSchedule
 
 grafana:
-  grafanaSpec:
-    nodeSelector:
-      workload: observability
-    tolerations:
-      - key: workload
-        operator: Equal
-        value: observability
-        effect: NoSchedule
+  nodeSelector:
+    workload: observability
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: observability
+      effect: NoSchedule
 
 alertmanager:
   alertmanagerSpec:
@@ -34,3 +33,44 @@ alertmanager:
         operator: Equal
         value: observability
         effect: NoSchedule
+
+kubeStateMetrics:
+  nodeSelector:
+      workload: observability
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: observability
+      effect: NoSchedule
+
+prometheusOperator:
+  nodeSelector:
+      workload: observability
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: observability
+      effect: NoSchedule
+
+prometheusOperator:
+  nodeSelector:
+      workload: observability
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: observability
+      effect: NoSchedule
+
+  admissionWebhooks:
+    patch:
+      tolerations:
+        - key: workload
+          operator: Equal
+          value: observability
+          effect: NoSchedule
+    create:
+      tolerations:
+        - key: workload
+          operator: Equal
+          value: observability
+          effect: NoSchedule
