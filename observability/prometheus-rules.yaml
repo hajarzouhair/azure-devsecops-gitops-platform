@@ -1,0 +1,42 @@
+# Nécessite l'Operator Prometheus (installé avec kube-prometheus-stack),
+# qui détecte automatiquement les ressources PrometheusRule.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: portfolio-app-alerts
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: portfolio-app.rules
+      rules:
+        - alert: PodCrashLooping
+          expr: rate(kube_pod_container_status_restarts_total{namespace="dev", pod=~"portfolio-app.*"}[15m]) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Le pod portfolio-app redémarre en boucle"
+            description: "{{ $labels.pod }} a redémarré plusieurs fois sur les 15 dernières minutes."
+
+        - alert: HighCPUUsage
+          expr: |
+            sum(rate(container_cpu_usage_seconds_total{namespace="dev", pod=~"portfolio-app.*"}[5m]))
+            / sum(kube_pod_container_resource_limits{namespace="dev", pod=~"portfolio-app.*", resource="cpu"})
+            > 0.8
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Utilisation CPU élevée sur portfolio-app"
+            description: "CPU > 80% des limits pendant plus de 10 minutes — le HPA devrait scaler, vérifier qu'il fonctionne."
+
+        - alert: PodNotReady
+          expr: kube_pod_status_ready{namespace="dev", pod=~"portfolio-app.*", condition="true"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Pod portfolio-app pas prêt"
+            description: "{{ $labels.pod }} n'est pas Ready depuis plus de 5 minutes — probes en échec probable."

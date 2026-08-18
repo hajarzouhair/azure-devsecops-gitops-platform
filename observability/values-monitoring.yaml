@@ -1,0 +1,36 @@
+# Force Prometheus, Grafana et Alertmanager à ne démarrer QUE sur le
+# node pool "monitoring" (taint workload=observability), pas sur le
+# pool "system" qui héberge l'application.
+prometheus:
+  prometheusSpec:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+    nodeSelector:
+      workload: observability
+    tolerations:
+      - key: workload
+        operator: Equal
+        value: observability
+        effect: NoSchedule
+
+grafana:
+  grafanaSpec:
+    nodeSelector:
+      workload: observability
+    tolerations:
+      - key: workload
+        operator: Equal
+        value: observability
+        effect: NoSchedule
+
+alertmanager:
+  alertmanagerSpec:
+    nodeSelector:
+      workload: observability
+    tolerations:
+      - key: workload
+        operator: Equal
+        value: observability
+        effect: NoSchedule
