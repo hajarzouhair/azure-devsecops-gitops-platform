@@ -10,8 +10,9 @@ resources:
     # Le tag suit désormais le commit SHA comme en
     # staging — cohérent avec la policy Kyverno "disallow-latest-tag"
     # et bien plus traçable que "latest", même en dev.
+
 images:
-- name: acrhajarazureprojectdev.azurecr.io/portfolio-app
+- name: portfolio-app
   newName: acrhajarazureprojectdev.azurecr.io/portfolio-app
   newTag: 47ecee0d
 
