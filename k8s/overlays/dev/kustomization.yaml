@@ -13,12 +13,9 @@ resources:
     # et bien plus traçable que "latest", même en dev.
 
 images:
-- name: acrhajarazureprojectdev.azurecr.io/portfolio-app
-  newName: acrhajarazureprojectdev.azurecr.io/portfolio-app
-  newTag: 076d5e28
 - name: portfolio-app
   newName: acrhajarazureprojectdev.azurecr.io/portfolio-app
-  newTag: 4fbf988a
+  newTag: 076d5e28
 
 replicas:
 - count: 1

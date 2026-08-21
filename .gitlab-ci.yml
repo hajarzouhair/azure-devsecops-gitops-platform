@@ -210,7 +210,20 @@ update_manifest:
     # pas CI_JOB_TOKEN par défaut qui n'a pas les droits de push.
     - git remote set-url origin "https://gitlab-ci-token:${GIT_PUSH_TOKEN}@gitlab.com/hajarzouhair/hajar-azure-project.git"
     - cd k8s/overlays/dev
-    - kustomize edit set image "$ACR_LOGIN_SERVER/portfolio-app=$IMAGE_NAME:$IMAGE_TAG"
+    - |
+  awk -v tag="$IMAGE_TAG" '
+    $0 ~ /^[[:space:]]*-[[:space:]]*name:[[:space:]]*portfolio-app[[:space:]]*$/ {
+      in_image=1
+    }
+    in_image && $0 ~ /^[[:space:]]*newTag:/ {
+      sub(/newTag:.*/, "newTag: " tag)
+      in_image=0
+    }
+    in_image && $0 ~ /^[[:space:]]*-[[:space:]]*name:/ {
+      in_image=0
+    }
+    { print }
+  ' kustomization.yaml > kustomization.yaml.tmp && mv kustomization.yaml.tmp kustomization.yaml
     - cd ../../..
     - git add k8s/overlays/dev/kustomization.yaml
     # [skip ci] est essentiel : sans ça, ce commit relance le pipeline
