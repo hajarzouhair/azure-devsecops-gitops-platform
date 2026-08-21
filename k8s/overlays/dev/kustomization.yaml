@@ -6,6 +6,7 @@ namespace: dev
 resources:
 - ../../base
 - ../../security/network-policies
+- servicemonitor.yaml
 
     # Le tag suit désormais le commit SHA comme en
     # staging — cohérent avec la policy Kyverno "disallow-latest-tag"
