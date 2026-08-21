@@ -1,4 +1,25 @@
-stages:
+update_manifest:
+  stage: deploy
+  image: alpine:3.20
+  needs:
+    - sign_and_sbom
+
+  before_script:
+    - apk add --no-cache git
+
+  script:
+    - git config --global user.email "gitlab-ci@hajar-azure-project.local"
+    - git config --global user.name "GitLab CI"
+    - git remote set-url origin "https://gitlab-ci-token:${GIT_PUSH_TOKEN}@gitlab.com/hajarzouhair/hajar-azure-project.git"
+    - cd k8s/overlays/dev
+    - sed -i "s/^[[:space:]]*newTag:.*/  newTag: ${IMAGE_TAG}/" kustomization.yaml
+    - cd ../../..
+    - git add k8s/overlays/dev/kustomization.yaml
+    - git commit -m "chore(dev) update image tag to ${IMAGE_TAG} [skip ci]" || echo "Rien a commit, tag deja a jour"
+    - git push origin HEAD:master
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master"'stages:
   - test
   - build
   - scan
@@ -201,26 +222,17 @@ update_manifest:
     - sign_and_sbom
 
   before_script:
-    - apk add --no-cache git curl bash
+    - apk add --no-cache git
 
   script:
     - git config --global user.email "gitlab-ci@hajar-azure-project.local"
     - git config --global user.name "GitLab CI"
-
-    # Authentification via le Project Access Token
     - git remote set-url origin "https://gitlab-ci-token:${GIT_PUSH_TOKEN}@gitlab.com/hajarzouhair/hajar-azure-project.git"
-
     - cd k8s/overlays/dev
-
-    # Modifier uniquement le newTag de l'entrée portfolio-app existante
     - sed -i "s/^[[:space:]]*newTag:.*/  newTag: ${IMAGE_TAG}/" kustomization.yaml
-
     - cd ../../..
-
     - git add k8s/overlays/dev/kustomization.yaml
-
     - git commit -m "chore(dev) update image tag to ${IMAGE_TAG} [skip ci]" || echo "Rien a commit, tag deja a jour"
-
     - git push origin HEAD:master
 
   rules:
