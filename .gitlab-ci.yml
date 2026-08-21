@@ -197,26 +197,63 @@ sign_and_sbom:
 update_manifest:
   stage: deploy
   image: alpine:3.20
+
   needs:
     - sign_and_sbom
+
   before_script:
-    - apk add --no-cache git curl bash
-    - curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-    - mv kustomize /usr/local/bin/
-  script:
-    - git config --global user.email "gitlab-ci@hajar-azure-project.local"
-    - git config --global user.name "GitLab CI"
-    # Authentification via un Project Access Token dédié (voir note),
-    # pas CI_JOB_TOKEN par défaut qui n'a pas les droits de push.
-    - git remote set-url origin "https://gitlab-ci-token:${GIT_PUSH_TOKEN}@gitlab.com/hajarzouhair/hajar-azure-project.git"
-    - cd k8s/overlays/dev
-    - sed -i "s/^[[:space:]]*newTag:.*/  newTag: ${IMAGE_TAG}/" kustomization.yaml
-    - cd ../../..
-    - git add k8s/overlays/dev/kustomization.yaml
-    # [skip ci] est essentiel : sans ça, ce commit relance le pipeline
-    # à l'infini (nouveau commit -> nouveau build -> nouveau commit -> ...).
-    - git commit -m "chore(dev) update image tag to $IMAGE_TAG [skip ci]" || echo "Rien a commit, tag deja a jour"
-    - git push origin HEAD:master
+    - apk add --no-cache git python3
+
+  script: |
+    set -e
+
+    git config --global user.email "gitlab-ci@hajar-azure-project.local"
+    git config --global user.name "GitLab CI"
+
+    git remote set-url origin "https://gitlab-ci-token:${GIT_PUSH_TOKEN}@gitlab.com/hajarzouhair/hajar-azure-project.git"
+
+    cd k8s/overlays/dev
+
+    python3 - <<'PY'
+    from pathlib import Path
+    import os
+    import re
+
+    path = Path("kustomization.yaml")
+    image_tag = os.environ["IMAGE_TAG"]
+
+    content = path.read_text()
+
+    pattern = (
+        r'(- name:\s*portfolio-app\s*\n'
+        r'\s+newName:\s*acrhajarazureprojectdev\.azurecr\.io/portfolio-app\s*\n'
+        r'\s+newTag:\s*)[^\s]+'
+    )
+
+    updated, count = re.subn(
+        pattern,
+        rf'\g<1>{image_tag}',
+        content,
+        count=1
+    )
+
+    if count != 1:
+        raise SystemExit(
+            "ERREUR: l'entrée image portfolio-app n'a pas été trouvée "
+            "exactement une fois dans kustomization.yaml"
+        )
+
+    path.write_text(updated)
+    print(f"Image tag mise à jour vers: {image_tag}")
+    PY
+
+    cd ../../..
+
+    git add k8s/overlays/dev/kustomization.yaml
+
+    git commit -m "chore(dev) update image tag to ${IMAGE_TAG} [skip ci]" || echo "Rien a commit, tag deja a jour"
+
+    git push origin HEAD:master
+
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
-
