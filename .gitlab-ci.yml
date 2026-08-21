@@ -199,37 +199,29 @@ update_manifest:
   image: alpine:3.20
   needs:
     - sign_and_sbom
+
   before_script:
     - apk add --no-cache git curl bash
-    - curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-    - mv kustomize /usr/local/bin/
+
   script:
     - git config --global user.email "gitlab-ci@hajar-azure-project.local"
     - git config --global user.name "GitLab CI"
-    # Authentification via un Project Access Token dédié (voir note),
-    # pas CI_JOB_TOKEN par défaut qui n'a pas les droits de push.
+
+    # Authentification via le Project Access Token
     - git remote set-url origin "https://gitlab-ci-token:${GIT_PUSH_TOKEN}@gitlab.com/hajarzouhair/hajar-azure-project.git"
+
     - cd k8s/overlays/dev
-    - |
-  awk -v tag="$IMAGE_TAG" '
-    $0 ~ /^[[:space:]]*-[[:space:]]*name:[[:space:]]*portfolio-app[[:space:]]*$/ {
-      in_image=1
-    }
-    in_image && $0 ~ /^[[:space:]]*newTag:/ {
-      sub(/newTag:.*/, "newTag: " tag)
-      in_image=0
-    }
-    in_image && $0 ~ /^[[:space:]]*-[[:space:]]*name:/ {
-      in_image=0
-    }
-    { print }
-  ' kustomization.yaml > kustomization.yaml.tmp && mv kustomization.yaml.tmp kustomization.yaml
+
+    # Modifier uniquement le newTag de l'entrée portfolio-app existante
+    - sed -i "/^[[:space:]]*-[[:space:]]*name: portfolio-app$/,/^[[:space:]]*-[[:space:]]*name:/ s/^[[:space:]]*newTag:.*/  newTag: ${IMAGE_TAG}/" kustomization.yaml
+
     - cd ../../..
+
     - git add k8s/overlays/dev/kustomization.yaml
-    # [skip ci] est essentiel : sans ça, ce commit relance le pipeline
-    # à l'infini (nouveau commit -> nouveau build -> nouveau commit -> ...).
-    - git commit -m "chore(dev) update image tag to $IMAGE_TAG [skip ci]" || echo "Rien a commit, tag deja a jour"
+
+    - git commit -m "chore(dev) update image tag to ${IMAGE_TAG} [skip ci]" || echo "Rien a commit, tag deja a jour"
+
     - git push origin HEAD:master
+
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
-
