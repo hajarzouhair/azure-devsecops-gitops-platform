@@ -15,7 +15,7 @@ resources:
 images:
 - name: acrhajarazureprojectdev.azurecr.io/portfolio-app
   newName: acrhajarazureprojectdev.azurecr.io/portfolio-app
-  newTag: a912d7df
+  newTag: 81d56c52
 - name: portfolio-app
   newName: acrhajarazureprojectdev.azurecr.io/portfolio-app
   newTag: 47ecee0d
