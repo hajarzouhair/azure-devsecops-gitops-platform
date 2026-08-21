@@ -1,0 +1,37 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: portfolio-app-alerts
+  namespace: monitoring
+  labels:
+    release: monitoring   # même règle que pour le ServiceMonitor : label obligatoire
+spec:
+  groups:
+    - name: portfolio-app.rules
+      rules:
+        - alert: PortfolioAppDown
+          expr: up{job="portfolio-app"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "portfolio-app est down"
+            description: "Le pod portfolio-app ne répond plus depuis 2 minutes."
+
+        - alert: PortfolioAppHighCpu
+          expr: rate(container_cpu_usage_seconds_total{pod=~"portfolio-app.*"}[5m]) > 0.8
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "CPU élevé sur portfolio-app"
+            description: "Utilisation CPU > 80% depuis 5 minutes."
+
+        - alert: PortfolioAppHighLatency
+          expr: histogram_quantile(0.95, rate(http_server_requests_seconds_bucket{job="portfolio-app"}[5m])) > 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Latence p95 élevée"
+            description: "Le p95 des requêtes HTTP dépasse 1s depuis 5 minutes."
