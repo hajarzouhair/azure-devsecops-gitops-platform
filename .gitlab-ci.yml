@@ -213,7 +213,7 @@ update_manifest:
     - cd k8s/overlays/dev
 
     # Modifier uniquement le newTag de l'entrée portfolio-app existante
-    - sed -i "/^[[:space:]]*-[[:space:]]*name: portfolio-app$/,/^[[:space:]]*-[[:space:]]*name:/ s/^[[:space:]]*newTag:.*/  newTag: ${IMAGE_TAG}/" kustomization.yaml
+    - sed -i "s/^[[:space:]]*newTag:.*/  newTag: ${IMAGE_TAG}/" kustomization.yaml
 
     - cd ../../..
 
