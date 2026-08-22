@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: portfolio-app-dashboard
+  namespace: monitoring
+  labels:
+    # Label requis par le sidecar Grafana de kube-prometheus-stack
+    # pour charger automatiquement ce dashboard au demarrage/redemarrage
+    # du pod - evite d'avoir a le reimporter manuellement a chaque fois.
+    grafana_dashboard: "1"
+data:
+  dashboard-portfolio-app.json: |
+    {
+      "title": "Portfolio App - Vue d'ensemble",
+      "panels": [
+        {
+          "title": "Taux de requêtes HTTP (par statut)",
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "sum(rate(http_server_requests_seconds_count{job=\"portfolio-app\"}[5m])) by (status)"
+            }
+          ]
+        },
+        {
+          "title": "Latence p95",
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{job=\"portfolio-app\"}[5m])) by (le))"
+            }
+          ]
+        },
+        {
+          "title": "Utilisation CPU (% des limits)",
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"dev\", pod=~\"portfolio-app.*\"}[5m])) / sum(kube_pod_container_resource_limits{namespace=\"dev\", pod=~\"portfolio-app.*\", resource=\"cpu\"}) * 100"
+            }
+          ]
+        },
+        {
+          "title": "Nombre de replicas (HPA)",
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "kube_horizontalpodautoscaler_status_current_replicas{namespace=\"dev\", horizontalpodautoscaler=\"portfolio-app\"}"
+            }
+          ]
+        }
+      ]
+    }
