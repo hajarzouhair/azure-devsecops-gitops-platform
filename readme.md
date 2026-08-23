@@ -30,27 +30,28 @@ A production-style Kubernetes platform built on Azure (AKS), designed around a *
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌───────────────┐
-│  Terraform  │────▶│  Azure (AKS, │────▶│    ArgoCD      │
-│  (IaC)      │     │  ACR, Vault) │     │  (Application) │
-└─────────────┘     └──────────────┘     └───────┬────────┘
-                                                   │ sync (dev)
-                                                   ▼
-                                  ┌─────────────────────────────┐
+│  Terraform  │────▶│  Azure (AKS, │────▶│    ArgoCD     │
+│  (IaC)      │     │  ACR, Vault) │     │ (Application) │
+└─────────────┘     └──────────────┘     └───────┬───────┘
+                                                 │ sync (dev)
+                                                 ▼
+                                  ┌──────────────────────────────┐
                                   │        AKS Cluster           │
                                   │  node pool "system"          │
                                   │  ┌────────────┐  ┌────────┐  │
                                   │  │ App Pods   │  │  HPA   │  │
                                   │  │ (Kyverno,  │◀─┤ scales │  │
-                                  │  │  NetworkPol)│  └────────┘  │
+                                  │  │ NetworkPol)│  └────────┘  │
                                   │  └─────┬──────┘              │
                                   │        │ scrape              │
                                   │  node pool "monitoring"      │
-troubleshooting.md                                  │  ┌─────▼──────┐  (dedicated, │
-                                  │  │ Prometheus │   tainted)   │
-                                  │  │  Grafana   │              │
+                                  │        │                     │ 
+                                  │  ┌─────▼───────┐  (dedicated,│
+                                  │  │ Prometheus  │   tainted)  │
+                                  │  │  Grafana    │             │
                                   │  │ Alertmanager│             │
-                                  │  └────────────┘              │
-                                  └─────────────────────────────┘
+                                  │  └─────────────┘             │
+                                  └──────────────────────────────┘
 
 CI: GitLab CI → SAST → Trivy scan → Image signing + SBOM → Push to ACR → Update manifest (GitOps)
 ```
