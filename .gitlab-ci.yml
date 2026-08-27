@@ -98,7 +98,7 @@ container_scan:
 push_to_acr:
   stage: push
 
-  image: docker:24
+  image: mcr.microsoft.com/azure-cli:latest
 
   services:
     - docker:24-dind
@@ -113,33 +113,26 @@ push_to_acr:
 
   id_tokens:
     AZURE_ID_TOKEN:
-      aud: api://AzureADTokenExchange
+      aud: https://gitlab.com
 
   before_script:
 
-    # Install Azure CLI dependencies
-    - apk add --no-cache python3 py3-pip
+    # Install Docker CLI
+    - tdnf install -y docker
 
-    # Install Azure CLI
-    - pip3 install --break-system-packages azure-cli
-
-    # Verify installations
-    - docker version
+    # Verify tools
     - az version
+    - docker version
 
     # Authenticate GitLab -> Azure using OIDC
-    - az login
-        --service-principal
-        --username "$AZURE_CLIENT_ID"
-        --tenant "$AZURE_TENANT_ID"
-        --federated-token "$AZURE_ID_TOKEN"
+    - az login --service-principal --username "$AZURE_CLIENT_ID" --tenant "$AZURE_TENANT_ID" --federated-token "$AZURE_ID_TOKEN"
 
     # Authenticate Docker -> ACR
     - az acr login --name acrhajarazureprojectdev
 
   script:
 
-    # Load image produced by build job
+    # Load image from build job
     - docker load -i image.tar
 
     # Verify image
@@ -158,10 +151,10 @@ push_to_acr:
 sign_and_sbom:
   stage: sign
 
-  image: docker:24
+  image: mcr.microsoft.com/azure-cli:latest
 
   services:
-    - docker:24.0.5-dind
+    - docker:24-dind
 
   variables:
     DOCKER_HOST: tcp://docker:2375
@@ -173,7 +166,7 @@ sign_and_sbom:
 
   id_tokens:
     AZURE_ID_TOKEN:
-      aud: api://AzureADTokenExchange
+      aud: https://gitlab.com
 
     SIGSTORE_ID_TOKEN:
       aud: sigstore
@@ -181,16 +174,16 @@ sign_and_sbom:
   before_script:
 
     # ------------------------------------------------------
-    # Install Python and pip
+    # Install Docker CLI
     # ------------------------------------------------------
 
-    - apk add --no-cache python3 py3-pip curl wget
+    - tdnf install -y docker
 
     # ------------------------------------------------------
-    # Install Azure CLI
+    # Install Cosign dependencies
     # ------------------------------------------------------
 
-    - pip3 install --break-system-packages azure-cli
+    - tdnf install -y curl wget
 
     # ------------------------------------------------------
     # Install Cosign
@@ -209,8 +202,8 @@ sign_and_sbom:
     # Verify tools
     # ------------------------------------------------------
 
-    - docker version
     - az version
+    - docker version
     - cosign version
     - syft version
 
@@ -221,7 +214,7 @@ sign_and_sbom:
     - az login --service-principal --username "$AZURE_CLIENT_ID" --tenant "$AZURE_TENANT_ID" --federated-token "$AZURE_ID_TOKEN"
 
     # ------------------------------------------------------
-    # Authenticate Docker -> Azure Container Registry
+    # Authenticate Docker -> ACR
     # ------------------------------------------------------
 
     - az acr login --name acrhajarazureprojectdev
@@ -229,13 +222,13 @@ sign_and_sbom:
   script:
 
     # ------------------------------------------------------
-    # Pull exact image from ACR
+    # Pull exact image
     # ------------------------------------------------------
 
     - docker pull "$IMAGE_NAME:$IMAGE_TAG"
 
     # ------------------------------------------------------
-    # Get immutable image digest
+    # Get immutable digest
     # ------------------------------------------------------
 
     - IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_NAME:$IMAGE_TAG")
@@ -250,7 +243,7 @@ sign_and_sbom:
     - syft "$IMAGE_DIGEST" -o spdx-json > sbom.json
 
     # ------------------------------------------------------
-    # Sign image using immutable digest
+    # Sign image
     # ------------------------------------------------------
 
     - cosign sign --yes --registry-referrers-mode oci-1-1 "$IMAGE_DIGEST"
