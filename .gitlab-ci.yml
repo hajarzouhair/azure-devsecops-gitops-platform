@@ -201,16 +201,19 @@ sign_and_sbom:
   before_script:
 
     # ------------------------------------------------------
+    # Install required tools
+    # ------------------------------------------------------
+
+    - tdnf install -y curl wget tar gzip
+
+    # ------------------------------------------------------
     # Install Docker CLI
     # ------------------------------------------------------
 
-    - tdnf install -y docker
-
-    # ------------------------------------------------------
-    # Install Cosign dependencies
-    # ------------------------------------------------------
-
-    - tdnf install -y curl wget
+    - curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-24.0.9.tgz -o docker.tgz
+    - tar -xzf docker.tgz
+    - mv docker/docker /usr/local/bin/docker
+    - chmod +x /usr/local/bin/docker
 
     # ------------------------------------------------------
     # Install Cosign
@@ -238,7 +241,12 @@ sign_and_sbom:
     # Authenticate GitLab -> Azure using OIDC
     # ------------------------------------------------------
 
-    - az login --service-principal --username "$AZURE_CLIENT_ID" --tenant "$AZURE_TENANT_ID" --federated-token "$AZURE_ID_TOKEN"
+    - >
+      az login
+      --service-principal
+      --username "$AZURE_CLIENT_ID"
+      --tenant "$AZURE_TENANT_ID"
+      --federated-token "$AZURE_ID_TOKEN"
 
     # ------------------------------------------------------
     # Authenticate Docker -> ACR
@@ -270,16 +278,25 @@ sign_and_sbom:
     - syft "$IMAGE_DIGEST" -o spdx-json > sbom.json
 
     # ------------------------------------------------------
-    # Sign image
+    # Sign image using immutable digest
     # ------------------------------------------------------
 
-    - cosign sign --yes --registry-referrers-mode oci-1-1 "$IMAGE_DIGEST"
+    - >
+      cosign sign
+      --yes
+      --registry-referrers-mode oci-1-1
+      "$IMAGE_DIGEST"
 
     # ------------------------------------------------------
     # Create SBOM attestation
     # ------------------------------------------------------
 
-    - cosign attest --yes --type https://spdx.dev/Document --predicate sbom.json "$IMAGE_DIGEST"
+    - >
+      cosign attest
+      --yes
+      --type https://spdx.dev/Document
+      --predicate sbom.json
+      "$IMAGE_DIGEST"
 
   artifacts:
     paths:
