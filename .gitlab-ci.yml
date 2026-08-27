@@ -42,8 +42,7 @@ build:
   image: docker:24.0.5-cli
 
   services:
-    - name: docker:24.0.5-dind
-      alias: docker
+    - docker:24.0.5-dind
 
   variables:
     DOCKER_HOST: tcp://docker:2375
@@ -99,11 +98,10 @@ container_scan:
 push_to_acr:
   stage: push
 
-  image: mcr.microsoft.com/azure-cli:latest
+  image: docker:24
 
   services:
-    - name: docker:24.0.5-dind
-      alias: docker
+    - docker:24-dind
 
   variables:
     DOCKER_HOST: tcp://docker:2375
@@ -118,35 +116,40 @@ push_to_acr:
       aud: api://AzureADTokenExchange
 
   before_script:
-    # Installer Docker CLI dans l'image Azure CLI
-    - apk add --no-cache docker-cli
 
-    # Vérification
-    - az version
+    # Install Azure CLI dependencies
+    - apk add --no-cache python3 py3-pip
+
+    # Install Azure CLI
+    - pip3 install --break-system-packages azure-cli
+
+    # Verify installations
     - docker version
+    - az version
 
-    # Authentification GitLab OIDC -> Microsoft Entra ID
-    - az login --service-principal
+    # Authenticate GitLab -> Azure using OIDC
+    - az login
+        --service-principal
         --username "$AZURE_CLIENT_ID"
         --tenant "$AZURE_TENANT_ID"
         --federated-token "$AZURE_ID_TOKEN"
 
-    # Authentification Azure Container Registry
+    # Authenticate Docker -> ACR
     - az acr login --name acrhajarazureprojectdev
 
   script:
-    # Charger l'image construite précédemment
+
+    # Load image produced by build job
     - docker load -i image.tar
 
-    # Vérifier l'image
+    # Verify image
     - docker image inspect "$IMAGE_NAME:$IMAGE_TAG"
 
-    # Push vers ACR
+    # Push image to ACR
     - docker push "$IMAGE_NAME:$IMAGE_TAG"
 
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
-
 
 # ==========================================================
 # 6. COSIGN + SBOM
@@ -155,11 +158,10 @@ push_to_acr:
 sign_and_sbom:
   stage: sign
 
-  image: mcr.microsoft.com/azure-cli:latest
+  image: docker:24
 
   services:
-    - name: docker:24.0.5-dind
-      alias: docker
+    - docker:24.0.5-dind
 
   variables:
     DOCKER_HOST: tcp://docker:2375
@@ -179,10 +181,16 @@ sign_and_sbom:
   before_script:
 
     # ------------------------------------------------------
-    # Install Docker CLI
+    # Install Python and pip
     # ------------------------------------------------------
 
-    - apk add --no-cache docker-cli curl wget
+    - apk add --no-cache python3 py3-pip curl wget
+
+    # ------------------------------------------------------
+    # Install Azure CLI
+    # ------------------------------------------------------
+
+    - pip3 install --break-system-packages azure-cli
 
     # ------------------------------------------------------
     # Install Cosign
@@ -201,22 +209,19 @@ sign_and_sbom:
     # Verify tools
     # ------------------------------------------------------
 
-    - az version
     - docker version
+    - az version
     - cosign version
     - syft version
 
     # ------------------------------------------------------
-    # Authenticate GitLab -> Azure
+    # Authenticate GitLab -> Azure using OIDC
     # ------------------------------------------------------
 
-    - az login --service-principal
-        --username "$AZURE_CLIENT_ID"
-        --tenant "$AZURE_TENANT_ID"
-        --federated-token "$AZURE_ID_TOKEN"
+    - az login --service-principal --username "$AZURE_CLIENT_ID" --tenant "$AZURE_TENANT_ID" --federated-token "$AZURE_ID_TOKEN"
 
     # ------------------------------------------------------
-    # Authenticate Docker -> ACR
+    # Authenticate Docker -> Azure Container Registry
     # ------------------------------------------------------
 
     - az acr login --name acrhajarazureprojectdev
@@ -224,13 +229,13 @@ sign_and_sbom:
   script:
 
     # ------------------------------------------------------
-    # Pull exact image
+    # Pull exact image from ACR
     # ------------------------------------------------------
 
     - docker pull "$IMAGE_NAME:$IMAGE_TAG"
 
     # ------------------------------------------------------
-    # Get immutable digest
+    # Get immutable image digest
     # ------------------------------------------------------
 
     - IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_NAME:$IMAGE_TAG")
@@ -248,20 +253,13 @@ sign_and_sbom:
     # Sign image using immutable digest
     # ------------------------------------------------------
 
-    - cosign sign
-        --yes
-        --registry-referrers-mode oci-1-1
-        "$IMAGE_DIGEST"
+    - cosign sign --yes --registry-referrers-mode oci-1-1 "$IMAGE_DIGEST"
 
     # ------------------------------------------------------
     # Create SBOM attestation
     # ------------------------------------------------------
 
-    - cosign attest
-        --yes
-        --type https://spdx.dev/Document
-        --predicate sbom.json
-        "$IMAGE_DIGEST"
+    - cosign attest --yes --type https://spdx.dev/Document --predicate sbom.json "$IMAGE_DIGEST"
 
   artifacts:
     paths:
@@ -270,7 +268,6 @@ sign_and_sbom:
 
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
-
 
 # ==========================================================
 # 7. DEPLOY
