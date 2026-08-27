@@ -129,7 +129,6 @@ Independent layers enforce constraints at runtime, so no single misconfiguration
 **Kyverno (`k8s/security/kyverno/`)**, enforced (not just audited):
 - `disallow-root-user.yaml` — rejects any pod that doesn't run as a non-root, **numeric** UID at admission time (see troubleshooting issue #10 for why "numeric" specifically matters).
 - `disallow-latest-tag.yaml` — rejects any pod referencing an image tagged `:latest`, forcing every deployment to reference an immutable, traceable tag (a Git commit SHA, set automatically by the CI pipeline).
-- `require-resource-limits.yaml` — rejects any pod without explicit CPU/memory requests and limits.
 
 **Network Policies (`k8s/security/network-policies/`)** — a zero-trust networking model, built in explicit layers:
 - `default-deny-all.yaml` — the foundation: no traffic is allowed by default, in or out, for any pod in the `dev` namespace.
@@ -204,7 +203,6 @@ Alertmanager (part of `kube-prometheus-stack`) receives firing alerts, closing t
 │       ├── kyverno/
 │       │   ├── disallow-latest-tag.yaml
 │       │   ├── disallow-root-user.yaml
-│       │   └── require-resource-limits.yaml
 │       └── network-policies/
 │           ├── default-deny-all.yaml
 │           ├── allow-dns.yaml

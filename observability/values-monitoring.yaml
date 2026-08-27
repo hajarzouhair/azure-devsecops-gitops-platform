@@ -52,15 +52,6 @@ prometheusOperator:
       value: observability
       effect: NoSchedule
 
-prometheusOperator:
-  nodeSelector:
-      workload: observability
-  tolerations:
-    - key: workload
-      operator: Equal
-      value: observability
-      effect: NoSchedule
-
   admissionWebhooks:
     patch:
       tolerations:
