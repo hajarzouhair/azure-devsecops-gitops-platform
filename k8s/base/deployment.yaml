@@ -13,7 +13,9 @@ spec:
     metadata:
       labels:
         app: portfolio-app
+        azure.workload.identity/use: "true"  # important pour que Workload Identity injecte les éléments nécessaires ds le pod
     spec:
+      serviceAccountName: portfolio-app-sa
       containers:
         - name: portfolio-app
           # L'image réelle (registre + tag) est injectée par l'overlay
@@ -57,7 +59,7 @@ spec:
             periodSeconds: 15
           volumeMounts:
             - name: secrets-store
-              mountPath: "/mnt/secrets"
+              mountPath: "/mnt/secrets-store"
               readOnly: true
       volumes:
         - name: secrets-store
@@ -65,4 +67,4 @@ spec:
             driver: secrets-store.csi.k8s.io
             readOnly: true
             volumeAttributes:
-              secretProviderClass: demo-secret-provider
+              secretProviderClass: portfolio-app-secrets
