@@ -39,10 +39,10 @@ spec:
           resources:
             requests:
               cpu: "100m"
-              memory: "256Mi"
+              memory: "128Mi"
             limits:
-              cpu: "500m"
-              memory: "512Mi"
+              cpu: "300m"
+              memory: "256Mi"
           # Probes Spring Boot Actuator (à activer côté app si pas déjà fait :
           # dépendance spring-boot-starter-actuator dans le pom.xml).
           readinessProbe:

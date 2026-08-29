@@ -16,6 +16,11 @@ prometheus:
         effect: NoSchedule
 
 grafana:
+  grafanaSpec:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 200Mi
   nodeSelector:
     workload: observability
   tolerations:
@@ -35,6 +40,11 @@ alertmanager:
         effect: NoSchedule
 
 kubeStateMetrics:
+  kubeStateMetricsSpec:
+    resources:
+      requests:
+        cpu: 25m
+        memory: 100Mi
   nodeSelector:
       workload: observability
   tolerations:

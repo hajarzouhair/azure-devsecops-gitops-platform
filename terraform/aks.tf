@@ -11,10 +11,11 @@ resource "azurerm_kubernetes_cluster" "main" {
   # Elle sera utile plus tard si on active Workload Identity (fédération
   # OIDC entre AKS et Azure AD, alternative moderne au CSI Key Vault).
   oidc_issuer_enabled = true
+  workload_identity_enabled = true
 
   default_node_pool {
     name           = "system"
-    node_count     = 1
+    node_count     = 2
     vm_size        = "Standard_D2ads_v7"
     vnet_subnet_id = azurerm_subnet.aks.id
   }
