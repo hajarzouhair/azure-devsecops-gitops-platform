@@ -16,7 +16,7 @@ A production-style Kubernetes platform built on Azure (AKS), designed around a *
 - [2. Secure CI/CD Pipeline](#2-secure-cicd-pipeline)
 - [3. GitOps with ArgoCD](#3-gitops-with-argocd)
 - [4. Runtime Security (Defense in Depth)](#4-runtime-security-defense-in-depth)
-- [5. Secrets Management](#5-secrets-management)
+- [5. Secrets Management & Microsoft Entra Workload Identity](#5-Secrets-Management-&-Microsoft-Entra-Workload-Identity)
 - [6. Autoscaling](#6-autoscaling)
 - [7. Observability & Alerting](#7-observability--alerting)
 - [Repository Structure](#repository-structure)
@@ -26,7 +26,7 @@ A production-style Kubernetes platform built on Azure (AKS), designed around a *
 
 ---
 
-## Architecture Overview
+## Cluster Overview
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌───────────────┐
@@ -54,6 +54,184 @@ A production-style Kubernetes platform built on Azure (AKS), designed around a *
                                   └──────────────────────────────┘
 
 CI: GitLab CI → SAST → Trivy scan → Image signing + SBOM → Push to ACR → Update manifest (GitOps)
+
+
+## Architecture Overview
+
+```text
+┌──────────────────────┐
+│      GitLab CI       │
+│                      │
+│ Unit Tests           │
+│ SAST                 │
+│ Trivy                │
+│ Cosign + SBOM        │
+└──────────┬───────────┘
+           │
+           │ Build / Scan / Sign
+           ▼
+┌──────────────────────┐
+ agent-knowledge.md│   Azure Container    │
+│      Registry        │
+│        (ACR)         │
+└──────────┬───────────┘
+           │
+           │ Image
+           ▼
+┌────────────────────────────────────────────────────────────┐
+│                         Azure                              │
+│                                                            │
+│  ┌──────────────────┐       ┌──────────────────────────┐   │
+│  │    Terraform     │──────▶│     Azure Resources      │   │
+│  │       IaC        │       │                          │   │
+│  └──────────────────┘       │ AKS / ACR / Key Vault    │   │
+│                             └────────────┬─────────────┘   │
+│                                          │                 │
+│                                          ▼                 │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │                    AKS Cluster                       │  │
+│  │                                                      │  │
+│  │  ┌──────────────────────┐                            │  │
+│  │  │       ArgoCD         │                            │  │
+│  │  │                      │                            │  │
+│  │  │ GitOps reconciliation│                            │  │
+│  │  └──────────┬───────────┘                            │  │
+│  │             │ sync                                   │  │
+│  │             ▼                                        │  │
+│  │  ┌──────────────────────────────────────────────┐    │  │ 
+│  │  │              Application Pod                 │    │  │
+│  │  │                                              │    │  │
+│  │  │ Spring Boot                                  │    │  │
+│  │  │ ServiceAccount                               │    │  │
+│  │  │ HPA                                          │    │  │
+│  │  └──────────┬───────────────────────────────────┘    │  │
+│  │             │                                        │  │
+│  │             │ Federated identity                     │  │
+│  │             ▼                                        │  │
+│  │  ┌──────────────────────────────────────────────┐    │  │
+│  │  │       Microsoft Entra Workload Identity      │    │  │
+│  │  │              + AKS OIDC Issuer               │    │  │
+│  │  └──────────┬───────────────────────────────────┘    │  │
+│  │             │                                        │  │
+│  │             ▼                                        │  │
+│  │  ┌──────────────────────────────────────────────┐    │  │
+│  │  │       User Assigned Managed Identity         │    │  │
+│  │  │                    (UAMI)                    │    │  │
+│  │  └──────────┬───────────────────────────────────┘    │  │
+│  │             │                                        │  │
+│  │             │ Azure RBAC                             │  │
+│  │             │ Key Vault Secrets User                 │  │
+│  │             ▼                                        │  │
+│  │  ┌──────────────────────────────────────────────┐    │  │
+│  │  │               Azure Key Vault                │    │  │
+│  │  │                                              │    │  │
+│  │  │          Application secrets                 │    │  │
+│  │  └──────────┬───────────────────────────────────┘    │  │
+│  │             │                                        │  │
+│  │             │ Secret retrieval                       │  │
+│  │             ▼                                        │  │
+│  │  ┌──────────────────────────────────────────────┐    │  │
+│  │  │          Secrets Store CSI Driver            │    │  │
+│  │  │           + Azure Key Vault Provider         │    │  │
+│  │  └──────────────────────────────────────────────┘    │  │
+│  │                                                      │  │
+│  │  ┌──────────────────────────────────────────────┐    │  │
+│  │  │          Monitoring Node Pool                │    │  │
+│  │  │              (dedicated)                     │    │  │
+│  │  │                                              │    │  │
+│  │  │  Prometheus │ Grafana │ Alertmanager         │    │  │
+│  │  └──────────────────────────────────────────────┘    │  │
+│  │                                                      │  │
+│  │  Runtime Security:                                   │  │
+│  │  ┌──────────────┐       ┌──────────────────────┐     │  │
+│  │  │   Kyverno    │       │   Network Policies   │     │  │
+│  │  │ Policy-as-   │       │    Default-Deny      │     │  │
+│  │  │    Code      │       │      + Allow Rules   │     │  │
+│  │  └──────────────┘       └──────────────────────┘     │  │
+│  │                                                      │  │
+│  └──────────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────┘
+
+
+GitOps Flow
+───────────
+
+GitLab CI
+    │
+    │ Update Kubernetes image tag
+    ▼
+Git Repository
+    │
+    │ Pull / Reconcile
+    ▼
+ArgoCD
+    │
+    │ Apply desired state
+    ▼
+AKS
+
+
+Identity & Secrets Flow
+───────────────────────
+
+Application Pod
+      │
+      │ ServiceAccount
+      ▼
+Microsoft Entra Workload Identity
+      │
+      │ AKS OIDC Issuer
+      ▼
+User Assigned Managed Identity
+      │
+      │ Azure RBAC
+      │ Key Vault Secrets User
+      ▼
+Azure Key Vault
+      │
+      │ Secret retrieval
+      ▼
+Secrets Store CSI Driver
+      │
+      ▼
+Application
+
+
+Observability Flow
+──────────────────
+
+Application
+      │
+      │ /actuator/prometheus
+      ▼
+Prometheus
+      │
+      ├───────────────► Grafana
+      │
+      └───────────────► Alertmanager
+                              │
+                              ▼
+                           Alerts
+```
+
+The platform is organized around three complementary flows:
+
+**1. CI/CD and GitOps**
+
+GitLab CI performs testing, security scanning, image signing, SBOM generation, and pushes the validated image to Azure Container Registry. The pipeline then updates the Kubernetes image reference in Git. ArgoCD continuously reconciles the Git repository with the AKS cluster and applies the desired state.
+
+The pipeline therefore **does not deploy directly to Kubernetes**. ArgoCD is responsible for cluster-side deployment and reconciliation.
+
+**2. Identity and Secrets**
+
+Application workloads authenticate to Azure without storing Azure credentials in the container or Kubernetes manifests. A Kubernetes ServiceAccount is federated through the AKS OIDC issuer and Microsoft Entra Workload Identity to a dedicated User Assigned Managed Identity. Azure RBAC grants that identity the required Key Vault permissions, while the Secrets Store CSI Driver retrieves the secrets at runtime.
+
+**3. Observability**
+
+The application exposes JVM and HTTP metrics through Spring Boot Actuator. Prometheus collects these metrics through a Kubernetes `ServiceMonitor`, Grafana provides dashboards, and Alertmanager evaluates and routes alerts based on Prometheus rules.
+
+This architecture combines **Infrastructure as Code, secure CI/CD, GitOps, workload identity, centralized secrets management, runtime security, autoscaling, and observability** into a single Kubernetes platform.
+
 ```
 
 The pipeline never deploys directly to the cluster. It builds, scans, signs, and pushes an image, then updates a Kubernetes manifest in Git — **ArgoCD is the only component with write access to the cluster**, pulling the desired state from Git. This split between a *push-based CI* and a *pull-based CD* is the defining principle of GitOps, and it's a deliberate architectural choice here, not a default.
@@ -72,7 +250,7 @@ Currently a single ArgoCD `Application` is wired for the `dev` environment (see 
 | GitOps / CD | ArgoCD |
 | Security — pipeline | SAST, Trivy (image vulnerability scanning, blocking), Cosign image signing + SBOM (Syft) |
 | Security — runtime | Kyverno (policy-as-code, enforce mode), Network Policies (default-deny) |
-| Secrets management | Azure Key Vault via Secrets Store CSI Driver, Azure IAM role assignments (least-privilege access) |
+| Identity & Secrets | Microsoft Entra Workload Identity, AKS OIDC issuer, User Assigned Managed Identity, Azure Key Vault, Secrets Store CSI Driver, Azure RBAC |
 | Autoscaling | Horizontal Pod Autoscaler (HPA) |
 | Observability | Prometheus (kube-prometheus-stack), Grafana, Alertmanager, Micrometer |
 | Application | Spring Boot (Java 21), Spring Boot Actuator |
@@ -136,14 +314,189 @@ Independent layers enforce constraints at runtime, so no single misconfiguration
 - `allow-app-ingress.yaml` — the only inbound traffic explicitly permitted: requests to the application's port, which also covers kubelet probes and Prometheus scraping.
 
 **Access control**: no static credentials anywhere in the stack — ACR access is via the AKS managed identity (`AcrPull` role), Key Vault access via a dedicated managed identity (`Key Vault Secrets User` role), and the CI automation token is scoped to the minimum GitLab role needed to push manifest updates.
-
+ agent-knowledge.md
 ---
 
-## 5. Secrets Management
+## 5. Secrets Management & Microsoft Entra Workload Identity
 
-Secrets are never committed in plaintext manifests. `k8s/base/secret-provider-class.yaml` configures the **Secrets Store CSI Driver** with the Azure Key Vault provider: instead of storing a Kubernetes `Secret` object (only base64-encoded, not encrypted, by default), the pod mounts secrets **directly from Azure Key Vault at runtime** as a volume, and Terraform (`keyvault.tf`) grants a dedicated managed identity read access to that vault.
+Secrets are never committed in plaintext manifests, and Azure credentials are not embedded in application workloads.
 
-This resolves the apparent tension in GitOps between "everything must be declared in Git" and "secrets must never be in Git" — the `SecretProviderClass` manifest *is* committed (it just says "fetch this secret name from this vault"), but the actual secret value never touches the repository or Kubernetes' etcd store in plaintext.
+The platform uses **Microsoft Entra Workload Identity** with the **AKS OIDC issuer**, a **User Assigned Managed Identity (UAMI)**, a Kubernetes **ServiceAccount**, and the **Secrets Store CSI Driver** to securely retrieve secrets from **Azure Key Vault at runtime**.
+
+### Authentication Flow
+
+```text
+┌──────────────────────┐
+│   Application Pod    │
+│                      │
+│ Kubernetes           │
+│ ServiceAccount       │
+└──────────┬───────────┘
+           │
+           │ ServiceAccount token
+           ▼
+┌──────────────────────┐
+│    AKS OIDC Issuer   │
+└──────────┬───────────┘
+           │
+           │ Federated Identity Credential
+           ▼
+┌──────────────────────┐
+│   Microsoft Entra ID  │
+└──────────┬───────────┘
+           │
+           │ Federated authentication
+           ▼
+┌────────────────────────────┐
+│ User Assigned Managed      │
+│ Identity (UAMI)            │
+└──────────┬─────────────────┘
+           │
+           │ Azure RBAC
+           │ Key Vault Secrets User
+           ▼
+┌────────────────────────────┐
+│      Azure Key Vault       │
+│                            │
+│       Application secrets  │
+└──────────┬─────────────────┘
+           │
+           │ Runtime retrieval
+           ▼
+┌────────────────────────────┐
+│ Secrets Store CSI Driver   │
+│ + Azure Key Vault Provider │
+└────────────────────────────┘
+```
+
+### How Workload Identity works
+
+The Kubernetes workload does not store an Azure client secret, password, or long-lived service principal credential.
+
+Instead, the workload runs with a dedicated Kubernetes **ServiceAccount**. The AKS cluster exposes an **OIDC issuer**, which establishes a trusted identity source for Microsoft Entra ID.
+
+A **Federated Identity Credential** creates the trust relationship between:
+
+* the AKS OIDC issuer;
+* the Kubernetes ServiceAccount;
+* the User Assigned Managed Identity.
+
+When the application needs to access Azure resources, Microsoft Entra ID validates the federated identity and provides authentication for the associated managed identity.
+
+The UAMI is then authorized through **Azure RBAC** to access only the required Key Vault resources.
+
+This provides identity-based access without embedding static Azure credentials inside the application or Kubernetes manifests.
+
+### Key Components
+
+| Component                             | Role                                                            |
+| ------------------------------------- | --------------------------------------------------------------- |
+| **AKS OIDC Issuer**                   | Provides the trusted identity issuer for Kubernetes workloads   |
+| **Microsoft Entra Workload Identity** | Enables federated authentication between Kubernetes and Azure   |
+| **Kubernetes ServiceAccount**         | Represents the application's workload identity inside AKS       |
+| **Federated Identity Credential**     | Establishes trust between the ServiceAccount and UAMI           |
+| **User Assigned Managed Identity**    | Provides the Azure identity used by the workload                |
+| **Azure RBAC**                        | Controls access to Azure resources using least privilege        |
+| **Azure Key Vault**                   | Centralized storage for application secrets                     |
+| **Secrets Store CSI Driver**          | Retrieves and exposes Key Vault secrets to Kubernetes workloads |
+| **Azure Key Vault Provider**          | Connects the CSI Driver to Azure Key Vault                      |
+
+### SecretProviderClass
+
+The `SecretProviderClass` declares how the workload connects to Azure Key Vault without containing the actual secret values.
+
+The manifest contains only the **configuration required to retrieve the secret**. The actual secret value remains stored in Azure Key Vault.
+
+### Runtime Secret Retrieval
+
+The complete process is:
+
+```text
+Git
+ │
+ │ Kubernetes manifests only
+ ▼
+SecretProviderClass
+ │
+ ▼
+Application Pod
+ │
+ │ ServiceAccount identity
+ ▼
+Microsoft Entra Workload Identity
+ │
+ ▼
+User Assigned Managed Identity
+ │
+ │ Key Vault Secrets User
+ ▼
+Azure Key Vault
+ │
+ │ Secret value
+ ▼
+Secrets Store CSI Driver
+ │
+ ▼
+Application
+```
+
+This creates a clear separation between **deployment configuration** and **secret data**:
+
+```text
+Configuration ────────► Git / Kubernetes manifests
+Secret values ────────► Azure Key Vault
+Workload identity ────► Microsoft Entra Workload Identity
+Authorization ────────► Azure RBAC
+```
+
+### Security Benefits
+
+This architecture eliminates the need to store long-lived Azure credentials inside application workloads.
+
+It provides:
+
+* **No Azure client secrets stored in Git**.
+* **No Azure credentials embedded in container images**.
+* **No static Azure credentials required by the application pod**.
+* **Federated authentication through AKS OIDC**.
+* **Dedicated identity per workload** through a User Assigned Managed Identity.
+* **Least-privilege access** through Azure RBAC.
+* **Centralized secret management** with Azure Key Vault.
+* **Runtime secret retrieval** instead of hardcoding secret values.
+* **Secret rotation support** without rebuilding the application image.
+* A clear separation between **GitOps configuration** and **sensitive secret data**.
+
+### Secret Rotation
+
+Secrets are managed centrally in Azure Key Vault rather than being versioned with the application configuration.
+
+When a secret is rotated in Key Vault, the Secrets Store CSI Driver can synchronize the updated value according to the configured rotation mechanism.
+
+This means secret changes can be managed independently from the application image and Git repository.
+
+The deployment pipeline therefore does not need to contain or transmit the secret value itself.
+
+### Infrastructure as Code
+
+The identity and access model is designed to be reproducible through Infrastructure as Code.
+
+Terraform is responsible for the Azure-side resources and permissions, including:
+
+* AKS workload identity / OIDC configuration;
+* User Assigned Managed Identity;
+* Azure Key Vault;
+* Azure RBAC role assignments;
+* required Key Vault integration components.
+
+Kubernetes manifests define the workload-side configuration:
+
+* ServiceAccount;
+* workload identity annotations/labels;
+* SecretProviderClass;
+* application Deployment;
+* CSI volume configuration.
+
+This results in a declarative security model where **identity, authorization, secret storage, and workload configuration are explicitly defined rather than manually configured through the portal**.
 
 ---
 
@@ -175,53 +528,120 @@ Alertmanager (part of `kube-prometheus-stack`) receives firing alerts, closing t
 ## Repository Structure
 
 ```
+## Repository Structure
+
+```text
 .
-├── readme.md
-├── .gitlab-ci.yml                          # CI: test, build, SAST, Trivy, sign+SBOM, push, update manifest
-├── Dockerfile                              # Multi-stage, non-root numeric UID
+├── .gitignore
+├── .gitlab-ci.yml                         # GitLab CI/CD pipeline
+├── CONTRIBUTING.md
+├── Dockerfile                             # Multi-stage, non-root container
+├── LICENSE
+│
 ├── argocd/
-│   └── application-dev.yaml                # ArgoCD Application (dev environment)
+│   ├── application-dev.yaml                # ArgoCD Application (dev)
+│   └── kustomization.yaml
+│
 ├── docs/
-│   ├── architecture.md
-│   └── troubleshooting.md                  # Real debugging log (18 incidents)
-│   └── screenshots
+│   ├── agent-knowledge.md
+│   ├── architecture/                      # Architecture documentation
+│   ├── screenshots/                        # Project screenshots
+│   │   ├── argocd/
+│   │   ├── azure/
+│   │   ├── cluster/
+│   │   ├── grafana/
+│   │   ├── pipeline/
+│   │   └── prometheus/
+│   └── troubleshooting.md                  # Real troubleshooting log
+│
 ├── k8s/
 │   ├── base/
-│   │   ├── deployment.yaml
-│   │   ├── service.yaml
-│   │   ├── hpa.yaml                        # Horizontal Pod Autoscaler
+│   │   ├── ai-agent/
+│   │   │   ├── auth/                       # Authentication configuration
+│   │   │   ├── cluster-issuer-prod.yaml   # TLS certificate issuer
+│   │   │   ├── cluster-issuer-staging.yaml
+│   │   │   ├── ingress.yaml                # AI agent ingress
+│   │   │   ├── kubernetes-mcp-config.yaml # Kubernetes MCP configuration
+│   │   │   ├── kubernetes-mcp-deployment.yaml
+│   │   │   ├── namespace.yaml
+│   │   │   ├── networkpolicy.yaml          # AI agent network isolation
+│   │   │   ├── prometheus-mcp-deployment.yaml
+│   │   │   ├── pushgateway-deployment.yaml
+│   │   │   └── rbac.yaml                   # Kubernetes RBAC for the agent
+│   │   │
+│   │   ├── deployment.yaml                 # Application Deployment
+│   │   ├── hpa.yaml                         # Horizontal Pod Autoscaler
+│   │   ├── kustomization.yaml
 │   │   ├── secret-provider-class.yaml      # Azure Key Vault CSI integration
-│   │   └── kustomization.yaml
+│   │   ├── service.yaml
+│   │   └── serviceaccount.yaml              # Workload Identity ServiceAccount
+│   │
 │   ├── overlays/
 │   │   ├── dev/
-│   │   │   ├── servicemonitor.yaml
-│   │   │   ├── alerts.yaml
-│   │   │   └── kustomization.yaml
+│   │   │   ├── alerts.yaml                  # Prometheus alerting rules
+│   │   │   ├── kustomization.yaml
+│   │   │   └── servicemonitor.yaml          # Application metrics discovery
 │   │   └── staging/
-│   │       └── kustomization.yaml          # defined, not yet wired to ArgoCD
+│   │       └── kustomization.yaml            # Staging overlay
+│   │
 │   └── security/
 │       ├── kyverno/
 │       │   ├── disallow-latest-tag.yaml
-│       │   ├── disallow-root-user.yaml
+│       │   └── disallow-root-user.yaml
 │       └── network-policies/
-│           ├── default-deny-all.yaml
-│           ├── allow-dns.yaml
 │           ├── allow-app-ingress.yaml
+│           ├── allow-dns.yaml
+│           ├── default-deny-all.yaml
 │           └── kustomization.yaml
+│
 ├── observability/
-│   ├── dashboard-portfolio-app.json
-│   ├── dashboard-configmap.yaml            # persists the dashboard across Grafana restarts
-│   └── values-monitoring.yaml              # kube-prometheus-stack Helm values (node pool tolerations)
+│   ├── dashboard-configmap.yaml             # Grafana dashboard provisioning
+│   ├── dashboard-portfolio-app.json         # Grafana dashboard definition
+│   └── values-monitoring.yaml               # kube-prometheus-stack values
+│
 ├── scripts/
-│   └── bootstrap-backend.sh                # Provisions the Terraform remote state backend
-├── src/main/java/.../DemoApplication.java  # Spring Boot application
-├── src/main/resources/application.properties
-└── terraform/
-    ├── main.tf / providers.tf
-    ├── aks.tf / acr.tf / keyvault.tf
-    ├── monitoring-node-pool.tf             # Dedicated, tainted node pool for observability
-    └── variables.tf / outputs.tf
+│   └── bootstrap-backend.sh                 # Terraform remote backend bootstrap
+│
+├── src/
+│   ├── main/
+│   │   ├── java/
+│   │   │   └── com/                         # Spring Boot application source
+│   │   └── resources/
+│   │       └── application.properties
+│   └── test/
+│       └── java/
+│           └── com/                         # Application tests
+│
+├── terraform/
+│   ├── acr.tf                               # Azure Container Registry
+│   ├── aks.tf                               # AKS + OIDC / Workload Identity
+│   ├── backend.tf                           # Remote Terraform backend
+│   ├── foundry.tf                           # Azure AI Foundry resources
+│   ├── keyvault.tf                          # Azure Key Vault + RBAC
+│   ├── main.tf
+│   ├── monitoring-node-pool.tf              # Dedicated monitoring node pool
+│   ├── outputs.tf
+│   ├── providers.tf
+│   └── variables.tf
+│
+├── pom.xml                                  # Maven configuration
+├── mvnw / mvnw.cmd                           # Maven Wrapper
+└── readme.md
 ```
+
+### Key Architectural Areas
+
+* **`terraform/`** — Azure infrastructure provisioned through Infrastructure as Code, including AKS, ACR, Azure Key Vault, monitoring infrastructure, and Azure AI Foundry resources.
+* **`k8s/base/`** — reusable Kubernetes resources shared across environments.
+* **`k8s/base/ai-agent/`** — Kubernetes manifests for the AI-powered incident investigation components, including Kubernetes MCP, Prometheus MCP, Pushgateway, RBAC, networking, ingress, and authentication.
+* **`k8s/overlays/`** — environment-specific Kustomize configuration for `dev` and `staging`.
+* **`k8s/security/`** — runtime security policies using Kyverno and Kubernetes NetworkPolicies.
+* **`observability/`** — Prometheus/Grafana configuration and dashboard provisioning.
+* **`argocd/`** — GitOps application definitions used by ArgoCD.
+* **`docs/`** — architecture documentation, screenshots, and the real troubleshooting history.
+* **`src/`** — Spring Boot application source code and tests.
+
+The repository therefore contains both the **platform infrastructure** and the **application workload**, with infrastructure, security, identity, observability, GitOps, and AI-assisted incident investigation represented declaratively in code.
 
 ---
 
@@ -254,7 +674,7 @@ kubectl port-forward -n monitoring svc/monitoring-kube-prometheus-prometheus 909
 # → Status > Targets should show portfolio-app as UP
 
 # 7. Access Grafana
-kubectl port-forward -n monitoring svc/monitoring-grafana 3000:80
+kubectl port-forward -n monitoring svc/prometheus-stack-grafana 3000:80
 # → login: admin / <password set at install>
 # → Dashboards (left sidebar) > "Portfolio App - Vue d'ensemble"
 ```

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k8s-mcp-config
+  namespace: ai-agent
+data:
+  config.toml: |
+    read_only = true
+    disable_destructive = true
+    toolsets = ["core"]
+
+    [[denied_resources]]
+    group = ""
+    version = "v1"
+    kind = "Secret"

@@ -8,7 +8,8 @@ resource "azurerm_key_vault" "main" {
 
   sku_name = "standard"
 
-  enable_rbac_authorization = true
+  # AzureRM 5.x
+  rbac_authorization_enabled = true
 
   # Permet la restauration en cas de suppression accidentelle
   purge_protection_enabled   = false
