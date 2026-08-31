@@ -10,12 +10,17 @@ resource "azurerm_kubernetes_cluster" "main" {
   # "true" pour que Terraform ne tente plus de la remettre à false.
   # Elle sera utile plus tard si on active Workload Identity (fédération
   # OIDC entre AKS et Azure AD, alternative moderne au CSI Key Vault).
-  oidc_issuer_enabled = true
+  oidc_issuer_enabled       = true
   workload_identity_enabled = true
+
+  # AzureRM 5.x : provisioning explicite des node pools
+  node_provisioning_profile {
+    mode = "Manual"
+  }
 
   default_node_pool {
     name           = "system"
-    node_count     = 2
+    node_count     = 1
     vm_size        = "Standard_D2ads_v7"
     vnet_subnet_id = azurerm_subnet.aks.id
   }
