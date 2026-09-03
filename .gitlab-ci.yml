@@ -302,7 +302,7 @@ sign_and_sbom:
       "$IMAGE_DIGEST"
 
   artifacts:
-     paths:
+    paths:
       - sbom.json
     when: always
     expire_in: 30 days
