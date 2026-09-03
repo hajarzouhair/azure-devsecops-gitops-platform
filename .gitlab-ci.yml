@@ -85,11 +85,11 @@ container_scan:
   script:
     - trivy image --format json --output trivy-report.json --input image.tar
     - trivy image --exit-code 1 --severity HIGH,CRITICAL --input image.tar || true
-    - echo "Trivy scan terminé. Le rapport est disponible dans trivy-report.json"
+    - echo "Trivy scan terminé"
   artifacts:
+    when: always
     paths:
       - trivy-report.json
-    when: always
     expire_in: 30 days
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
