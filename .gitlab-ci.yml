@@ -327,7 +327,7 @@ ai_security_review:
     - job: container_scan
       artifacts: true
 
-    - job: sast
+    - job: semgrep-sast
       artifacts: true
 
     - job: sign_and_sbom
