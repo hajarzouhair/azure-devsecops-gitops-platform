@@ -82,48 +82,15 @@ container_scan:
     entrypoint: [""]
   needs:
     - build
-  script: |
-    set +e
-
-    echo "========================================"
-    echo "TRIVY - Génération du rapport JSON"
-    echo "========================================"
-
-    trivy image \
-      --format json \
-      --output trivy-report.json \
-      --input image.tar
-
-    echo "========================================"
-    echo "TRIVY - Scan HIGH/CRITICAL"
-    echo "========================================"
-
-    trivy image \
-      --exit-code 1 \
-      --severity HIGH,CRITICAL \
-      --input image.tar
-
-    TRIVY_EXIT_CODE=$?
-
-    echo "========================================"
-    echo "Trivy exit code: ${TRIVY_EXIT_CODE}"
-    echo "========================================"
-
-    if [ "$TRIVY_EXIT_CODE" -ne 0 ]; then
-      echo "⚠️ Des vulnérabilités HIGH/CRITICAL ont été détectées."
-      echo "Le rapport sera transmis à l'étape AI Security Review."
-    else
-      echo "✅ Aucune vulnérabilité HIGH/CRITICAL détectée."
-    fi
-
-    exit 0
-
+  script:
+    - trivy image --format json --output trivy-report.json --input image.tar
+    - trivy image --exit-code 1 --severity HIGH,CRITICAL --input image.tar || true
+    - echo "Trivy scan terminé. Le rapport est disponible dans trivy-report.json"
   artifacts:
     paths:
       - trivy-report.json
     when: always
     expire_in: 30 days
-
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
 
