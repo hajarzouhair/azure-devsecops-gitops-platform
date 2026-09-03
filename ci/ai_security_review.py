@@ -45,7 +45,7 @@ N'effectue aucune modification sur l'infrastructure.
 # NOTE: api-version ajouté — probablement la cause du 400, à confirmer/
 # ajuster contre le panneau "View code" de l'agent dans le portail Foundry
 # si l'erreur persiste malgré ce correctif.
-API_VERSION = "2025-05-01"
+API_VERSION = "v1"
 
 endpoint = (
     f"{project_endpoint}"
