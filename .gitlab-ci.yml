@@ -77,17 +77,46 @@ include:
 
 container_scan:
   stage: scan
-
   image:
     name: aquasec/trivy:0.66.0
     entrypoint: [""]
-
   needs:
     - build
+  script: |
+    set +e
 
-  script:
-    - trivy image --format json --output trivy-report.json --input image.tar
-    - trivy image --exit-code 1 --severity HIGH,CRITICAL --input image.tar
+    echo "========================================"
+    echo "TRIVY - Génération du rapport JSON"
+    echo "========================================"
+
+    trivy image \
+      --format json \
+      --output trivy-report.json \
+      --input image.tar
+
+    echo "========================================"
+    echo "TRIVY - Scan HIGH/CRITICAL"
+    echo "========================================"
+
+    trivy image \
+      --exit-code 1 \
+      --severity HIGH,CRITICAL \
+      --input image.tar
+
+    TRIVY_EXIT_CODE=$?
+
+    echo "========================================"
+    echo "Trivy exit code: ${TRIVY_EXIT_CODE}"
+    echo "========================================"
+
+    if [ "$TRIVY_EXIT_CODE" -ne 0 ]; then
+      echo "⚠️ Des vulnérabilités HIGH/CRITICAL ont été détectées."
+      echo "Le rapport sera transmis à l'étape AI Security Review."
+    else
+      echo "✅ Aucune vulnérabilité HIGH/CRITICAL détectée."
+    fi
+
+    exit 0
 
   artifacts:
     paths:
@@ -306,15 +335,54 @@ sign_and_sbom:
       "$IMAGE_DIGEST"
 
   artifacts:
-    paths:
+     paths:
       - sbom.json
+    when: always
     expire_in: 30 days
 
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
 
 # ==========================================================
-# 7. DEPLOY
+# 7. AI-SECURITY-REVIEW
+# ==========================================================
+
+ai_security_review:
+  stage: ai_review
+
+  image: python:3.12-slim
+
+  id_tokens:
+    AZURE_AI_REVIEW_TOKEN:
+      aud: api://AzureADTokenExchange
+
+  needs:
+    - job: container_scan
+      artifacts: true
+
+    - job: sast
+      artifacts: true
+
+    - job: sign_and_sbom
+      artifacts: true
+
+  before_script:
+    - pip install --no-cache-dir requests
+
+  script:
+    - python ci/ai_security_review.py
+
+  artifacts:
+    paths:
+      - ai-security-report.md
+    when: always
+    expire_in: 30 days
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master"'
+
+# ==========================================================
+# 8. DEPLOY
 # ==========================================================
 
 # Deployment will be implemented through Argo CD.
@@ -327,6 +395,7 @@ sign_and_sbom:
 # nouveau tag dans le manifest, à la place de le faire à la main.
 # Boucle GitOps complète : build -> nouveau tag -> commit -> push
 # -> ArgoCD détecte -> déploie, sans intervention humaine.
+
 update_manifest:
   stage: deploy
   image: alpine:3.20
