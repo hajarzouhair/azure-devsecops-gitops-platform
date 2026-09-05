@@ -1,39 +1,113 @@
 {
   "title": "Portfolio App - Vue d'ensemble",
+  "uid": "portfolio-app",
+  "schemaVersion": 42,
+  "version": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "refresh": "30s",
   "panels": [
     {
+      "id": 1,
       "title": "Taux de requêtes HTTP (par statut)",
       "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
       "targets": [
         {
+          "refId": "A",
           "expr": "sum(rate(http_server_requests_seconds_count{job=\"portfolio-app\"}[5m])) by (status)"
         }
       ]
     },
     {
+      "id": 2,
       "title": "Latence p95",
       "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
       "targets": [
         {
+          "refId": "A",
           "expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{job=\"portfolio-app\"}[5m])) by (le))"
         }
       ]
     },
     {
+      "id": 3,
       "title": "Utilisation CPU (% des limits)",
       "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
       "targets": [
         {
+          "refId": "A",
           "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"dev\", pod=~\"portfolio-app.*\"}[5m])) / sum(kube_pod_container_resource_limits{namespace=\"dev\", pod=~\"portfolio-app.*\", resource=\"cpu\"}) * 100"
         }
       ]
     },
     {
+      "id": 4,
       "title": "Nombre de replicas (HPA)",
       "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
       "targets": [
         {
+          "refId": "A",
           "expr": "kube_horizontalpodautoscaler_status_current_replicas{namespace=\"dev\", horizontalpodautoscaler=\"portfolio-app\"}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Appels Agent AI (succès vs échec)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (status) (ai_agent_call_total)"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Durée moyenne des appels Agent AI",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "avg(ai_agent_call_duration_seconds)"
         }
       ]
     }

@@ -4,7 +4,7 @@ metadata:
   name: portfolio-app
   namespace: monitoring
   labels:
-    release: monitoring
+    release: prometheus-stack
 spec:
   namespaceSelector:
     matchNames:
