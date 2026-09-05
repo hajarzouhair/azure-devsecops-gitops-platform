@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import requests
 
 def load_json(path):
@@ -7,9 +8,6 @@ def load_json(path):
         return json.load(f)
 
 def summarize_trivy(trivy_data, max_vulns=30):
-    """Extrait uniquement les vulnérabilités HIGH/CRITICAL, avec les
-    champs essentiels — pas le JSON Trivy complet (métadonnées de
-    licence, CVSS détaillé par vecteur, références, etc. sont omis)."""
     findings = []
     for result in trivy_data.get("Results", []):
         target = result.get("Target", "")
@@ -43,8 +41,6 @@ def summarize_sast(sast_data, max_findings=20):
     return findings[:max_findings], truncated
 
 def summarize_sbom(sbom_data, max_packages=50):
-    """Ne garde que les noms/versions des packages — pas les hash,
-    licences détaillées, ni les relations de dépendances complètes."""
     packages = sbom_data.get("packages", [])
     summary = [
         {"name": p.get("name"), "version": p.get("versionInfo")}
@@ -52,35 +48,61 @@ def summarize_sbom(sbom_data, max_packages=50):
     ]
     return summary, len(packages) > max_packages
 
-trivy_raw = load_json("trivy-report.json")
-sast_raw = load_json("gl-sast-report.json")
-sbom_raw = load_json("sbom.json")
+def push_metrics(duration, status_label):
+    pushgateway_url = os.environ.get("PUSHGATEWAY_URL")
+    pushgateway_auth = os.environ.get("PUSHGATEWAY_AUTH")
+    if not pushgateway_url or not pushgateway_auth:
+        return
+    user, pwd = pushgateway_auth.split(":", 1)
+    metrics = (
+        f'# TYPE ai_agent_call_duration_seconds gauge\n'
+        f'ai_agent_call_duration_seconds {duration:.2f}\n'
+        f'# TYPE ai_agent_call_total counter\n'
+        f'ai_agent_call_total{{status="{status_label}"}} 1\n'
+    )
+    try:
+        requests.post(
+            f"{pushgateway_url}/metrics/job/ai_security_review",
+            data=metrics,
+            auth=(user, pwd),
+            timeout=10,
+        )
+    except requests.RequestException as e:
+        print(f"Avertissement : échec de l'envoi des métriques ({e})")
 
-trivy_summary, trivy_truncated = summarize_trivy(trivy_raw)
-sast_summary, sast_truncated = summarize_sast(sast_raw)
-sbom_summary, sbom_truncated = summarize_sbom(sbom_raw)
 
-gitlab_oidc_token = os.environ["AZURE_AI_REVIEW_TOKEN"]
-client_id = os.environ["AI_REVIEW_CLIENT_ID"]
-tenant_id = os.environ["AZURE_TENANT_ID"]
-project_endpoint = os.environ["FOUNDRY_PROJECT_ENDPOINT"].rstrip("/")
-agent_name = os.environ["FOUNDRY_AGENT_NAME"]
+start_time = time.time()
 
-token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
-token_resp = requests.post(token_url, data={
-    "client_id": client_id,
-    "scope": "https://ai.azure.com/.default",
-    "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-    "client_assertion": gitlab_oidc_token,
-    "grant_type": "client_credentials",
-})
-print("TOKEN EXCHANGE STATUS:", token_resp.status_code)
-if token_resp.status_code >= 400:
-    print("TOKEN EXCHANGE BODY:", token_resp.text)
-token_resp.raise_for_status()
-access_token = token_resp.json()["access_token"]
+try:
+    trivy_raw = load_json("trivy-report.json")
+    sast_raw = load_json("gl-sast-report.json")
+    sbom_raw = load_json("sbom.json")
 
-prompt = f"""
+    trivy_summary, trivy_truncated = summarize_trivy(trivy_raw)
+    sast_summary, sast_truncated = summarize_sast(sast_raw)
+    sbom_summary, sbom_truncated = summarize_sbom(sbom_raw)
+
+    gitlab_oidc_token = os.environ["AZURE_AI_REVIEW_TOKEN"]
+    client_id = os.environ["AI_REVIEW_CLIENT_ID"]
+    tenant_id = os.environ["AZURE_TENANT_ID"]
+    project_endpoint = os.environ["FOUNDRY_PROJECT_ENDPOINT"].rstrip("/")
+    agent_name = os.environ["FOUNDRY_AGENT_NAME"]
+
+    token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+    token_resp = requests.post(token_url, data={
+        "client_id": client_id,
+        "scope": "https://ai.azure.com/.default",
+        "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+        "client_assertion": gitlab_oidc_token,
+        "grant_type": "client_credentials",
+    })
+    print("TOKEN EXCHANGE STATUS:", token_resp.status_code)
+    if token_resp.status_code >= 400:
+        print("TOKEN EXCHANGE BODY:", token_resp.text)
+    token_resp.raise_for_status()
+    access_token = token_resp.json()["access_token"]
+
+    prompt = f"""
 Tu es un expert DevSecOps.
 Analyse les résultats du pipeline CI/CD ci-dessous. Les listes sont
 déjà filtrées sur les sévérités HIGH/CRITICAL et limitées en nombre
@@ -110,32 +132,39 @@ Analyse uniquement les données fournies.
 N'effectue aucune modification sur l'infrastructure.
 """
 
-endpoint = (
-    f"{project_endpoint}/agents/{agent_name}"
-    f"/endpoint/protocols/openai/responses?api-version=v1"
-)
+    endpoint = (
+        f"{project_endpoint}/agents/{agent_name}"
+        f"/endpoint/protocols/openai/responses?api-version=v1"
+    )
 
-response = requests.post(
-    endpoint,
-    headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
-    json={"input": prompt},
-    timeout=300,
-)
-print("STATUS:", response.status_code)
-if response.status_code >= 400:
-    print("BODY:", response.text)
-response.raise_for_status()
+    response = requests.post(
+        endpoint,
+        headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+        json={"input": prompt},
+        timeout=300,
+    )
+    print("STATUS:", response.status_code)
+    if response.status_code >= 400:
+        print("BODY:", response.text)
+    response.raise_for_status()
 
-data = response.json()
-if "output_text" in data:
-    report = data["output_text"]
-elif "output" in data:
-    report = json.dumps(data["output"], indent=2, ensure_ascii=False)
-else:
-    report = json.dumps(data, indent=2, ensure_ascii=False)
+    data = response.json()
+    if "output_text" in data:
+        report = data["output_text"]
+    elif "output" in data:
+        report = json.dumps(data["output"], indent=2, ensure_ascii=False)
+    else:
+        report = json.dumps(data, indent=2, ensure_ascii=False)
 
-with open("ai-security-report.md", "w", encoding="utf-8") as f:
-    f.write("# AI Security Review\n\n")
-    f.write(report)
+    with open("ai-security-report.md", "w", encoding="utf-8") as f:
+        f.write("# AI Security Review\n\n")
+        f.write(report)
 
-print("Rapport généré avec succès.")
+    duration = time.time() - start_time
+    push_metrics(duration, "success")
+    print(f"Rapport généré avec succès (durée: {duration:.1f}s).")
+
+except Exception:
+    duration = time.time() - start_time
+    push_metrics(duration, "failure")
+    raise
