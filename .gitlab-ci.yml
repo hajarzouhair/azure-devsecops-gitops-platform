@@ -84,7 +84,7 @@ container_scan:
     - build
   script:
     - trivy image --format json --output trivy-report.json --input image.tar
-    - trivy image --exit-code 1 --severity HIGH,CRITICAL --input image.tar || true
+    - trivy image --exit-code 1 --severity HIGH,CRITICAL --input image.tar
     - echo "Trivy scan terminé"
   artifacts:
     when: always
