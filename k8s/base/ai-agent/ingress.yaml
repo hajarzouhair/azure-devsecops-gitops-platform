@@ -24,3 +24,6 @@ spec:
           - path: /prometheus(/|$)(.*)
             pathType: ImplementationSpecific
             backend: { service: { name: prometheus-mcp-server, port: { number: 80 } } }
+          - path: /pushgateway(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend: { service: { name: pushgateway, port: { number: 9091 } } }
