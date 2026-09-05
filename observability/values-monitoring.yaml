@@ -28,6 +28,11 @@ grafana:
       operator: Equal
       value: observability
       effect: NoSchedule
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
 
 alertmanager:
   alertmanagerSpec:

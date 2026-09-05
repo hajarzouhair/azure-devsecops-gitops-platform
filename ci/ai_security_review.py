@@ -52,6 +52,7 @@ def push_metrics(duration, status_label):
     pushgateway_url = os.environ.get("PUSHGATEWAY_URL")
     pushgateway_auth = os.environ.get("PUSHGATEWAY_AUTH")
     if not pushgateway_url or not pushgateway_auth:
+        print("AVERTISSEMENT: PUSHGATEWAY_URL ou PUSHGATEWAY_AUTH absent — métriques non envoyées.")
         return
     user, pwd = pushgateway_auth.split(":", 1)
     metrics = (
@@ -61,12 +62,15 @@ def push_metrics(duration, status_label):
         f'ai_agent_call_total{{status="{status_label}"}} 1\n'
     )
     try:
-        requests.post(
+        resp = requests.post(
             f"{pushgateway_url}/metrics/job/ai_security_review",
             data=metrics,
             auth=(user, pwd),
             timeout=10,
         )
+        print(f"PUSH METRICS STATUS: {resp.status_code}")
+        if resp.status_code >= 300:
+            print(f"PUSH METRICS BODY: {resp.text}")
     except requests.RequestException as e:
         print(f"Avertissement : échec de l'envoi des métriques ({e})")
 
