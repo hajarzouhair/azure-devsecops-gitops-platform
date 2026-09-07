@@ -337,13 +337,12 @@ ai_security_review:
     - pip install --no-cache-dir requests
 
   script:
-    - python ci/ai_security_review.py
+    - python ai-agent/ai_security_review.py
 
   artifacts:
     paths:
       - ai-security-report.md
     when: always
-    expire_in: 30 days
 
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
