@@ -35,7 +35,7 @@ resource "azurerm_cognitive_account" "foundry" {
 }
 
 # --------------------------------------------------------------------------
-# Déploiement du modèle — gpt-4o-mini : suffisant pour l'investigation
+# Déploiement du modèle — gpt-4.1-mini : suffisant pour l'investigation
 # d'incidents, nettement moins cher que gpt-4o, pas de coût horaire
 # (facturation au token, contrairement aux nœuds AKS).
 # --------------------------------------------------------------------------

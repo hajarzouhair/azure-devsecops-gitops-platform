@@ -8,7 +8,7 @@ spec:
     kind: Deployment
     name: portfolio-app
   minReplicas: 1
-  maxReplicas: 1
+  maxReplicas: 4
   metrics:
     - type: Resource
       resource:
