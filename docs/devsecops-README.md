@@ -59,7 +59,7 @@ CI: GitLab CI → SAST → Trivy scan → Image signing + SBOM → Push to ACR �
 
 ## Architecture Overview
 
-![Architecture Overview](./docs/architecture/architecture_devsecops.png)
+![Architecture Overview](docs/architecture/architecture_devsecops.png)
 
 ```text
 ┌──────────────────────┐
