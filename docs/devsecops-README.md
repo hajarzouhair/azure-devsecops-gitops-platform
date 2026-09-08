@@ -4,7 +4,7 @@ A production-style Kubernetes platform built on Azure (AKS), designed around a *
 
 > This repository is mirrored to GitHub for visibility. The active CI/CD pipeline (GitLab CI) and GitOps deployment (ArgoCD) run against the source repo on GitLab — this mirror is a snapshot of the code and documentation, not a second live deployment.
 
-> Real debugging log for this project (issues encountered, root causes, fixes): [`docs/devsecops-troubleshooting.md`](./docs/devsecops-troubleshooting.md)
+> Real debugging log for this project (issues encountered, root causes, fixes): [`docs/devsecops-troubleshooting.md`](devsecops-troubleshooting.md)
 
 ---
 
@@ -59,7 +59,7 @@ CI: GitLab CI → SAST → Trivy scan → Image signing + SBOM → Push to ACR �
 
 ## Architecture Overview
 
-![Architecture Overview](docs/architecture/architecture_devsecops.png)
+![Architecture Overview](architecture/architecture_devsecops.png)
 
 ```text
 ┌──────────────────────┐
@@ -822,7 +822,7 @@ kubectl port-forward -n monitoring svc/prometheus-stack-grafana 3000:80
 # → Dashboards (left sidebar) > "Portfolio App - Vue d'ensemble"
 ```
 
-Full step-by-step detail, including every error actually hit along the way, is in [`docs/devsecops-troubleshooting.md`](./docs/devsecops-troubleshooting.md).
+Full step-by-step detail, including every error actually hit along the way, is in [`devsecops-troubleshooting.md`](devsecops-troubleshooting.md).
 
 ---
 
@@ -836,7 +836,7 @@ Full step-by-step detail, including every error actually hit along the way, is i
 
 ## Screenshots
 
-[`docs/screenshots`](docs/screenshots)
+[`screenshots`](screenshots)
 
 ```
 ---
