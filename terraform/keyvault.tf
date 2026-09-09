@@ -40,16 +40,3 @@ resource "azurerm_role_assignment" "current_user_keyvault_admin" {
   role_definition_name = "Key Vault Administrator"
   scope                = azurerm_key_vault.main.id
 }
-
-# --------------------------------------------------------------------------
-# Un secret de démonstration, pour valider que toute la chaîne fonctionne
-# (Key Vault -> CSI driver -> pod). À remplacer par de vrais secrets
-# applicatifs plus tard (ex: identifiants de base de données).
-# --------------------------------------------------------------------------
-resource "azurerm_key_vault_secret" "demo" {
-  name         = "demo-secret"
-  value        = "hello-from-key-vault"
-  key_vault_id = azurerm_key_vault.main.id
-
-  depends_on = [azurerm_role_assignment.current_user_keyvault_admin]
-}
