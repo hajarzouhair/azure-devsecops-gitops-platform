@@ -2,21 +2,10 @@
 
 Real issues encountered while building this project, with root causes and fixes — kept as a record of actual debugging work rather than a polished "everything worked first try" narrative.
 
----
-
-## 1. Azure Region Restriction
-
-**Symptom**: `terraform apply` failed creating the Virtual Network with `RequestDisallowedByAzure: The selected region is currently not accepting new customers.`
-
-**Diagnosis**: the subscription was authenticated correctly, but `westeurope` was not accepting new customers for this specific free-trial subscription.
-
-**Fix**: deployment region changed to `francecentral`.
-
-**Lesson**: free-trial Azure subscriptions can have per-region restrictions independent of the account itself — always confirm region availability before assuming a config error.
 
 ---
 
-## 2. Subnet Resource Not Found During Terraform Polling
+## 1. Subnet Resource Not Found During Terraform Polling
 
 **Symptom**: Terraform reported `ResourceNotFound` for a subnet while polling its provisioning state, even though Azure CLI confirmed the subnet existed with `ProvisioningState: Succeeded`.
 
@@ -26,45 +15,10 @@ Real issues encountered while building this project, with root causes and fixes 
 
 **Lesson**: a resource existing in the cloud provider does not guarantee it exists in Terraform's state — state and reality can diverge, especially after partial applies.
 
----
-
-## 3. Terraform Provider Binary Exceeding GitLab File Size Limit
-
-**Symptom**: `git push` rejected — a 223 MiB blob exceeded GitLab's 100 MiB limit.
-
-**Diagnosis**: the blob was `terraform/.terraform/providers/.../terraform-provider-azurerm_v3.117.1_x5` — the AzureRM provider binary downloaded automatically by `terraform init`. `.terraform/` and state files were not yet in `.gitignore`.
-
-**Fix**: added `.terraform/`, `*.tfstate*`, `*.tfvars*` to `.gitignore`; removed the already-tracked files with `git rm -r --cached`; amended the unpushed commit. `.terraform.lock.hcl` was kept under version control (it locks provider versions/checksums, unlike the binaries themselves).
-
-**Lesson**: `.gitignore` only prevents *future* additions — files already committed need `git rm --cached` (or history rewriting if already pushed) in addition to the ignore rule.
 
 ---
 
-## 4. AKS VM Size Not Allowed for Subscription
-
-**Symptom**: `terraform apply` failed creating the AKS cluster: `The VM size of Standard_B2s is not allowed in your subscription in location 'francecentral'.`
-
-**Diagnosis**: the free-trial subscription restricts available VM SKUs per region to an allow-list; `Standard_B2s` (a common, well-documented AKS size) wasn't on it for this subscription/region combination.
-
-**Fix**: switched the node pool `vm_size` to `Standard_D2ads_v7`, the smallest SKU present in Azure's returned allow-list.
-
-**Lesson**: don't assume a "standard" or widely-documented VM size is universally available — free-trial subscriptions can restrict SKUs independently of quota.
-
----
-
-## 5. kubectl Using K3s Instead of AKS
-
-**Symptom**: after `az aks get-credentials`, `kubectl get nodes` failed with `permission denied: /etc/rancher/k3s/k3s.yaml`.
-
-**Diagnosis**: the WSL environment already had K3s installed, which had replaced `/usr/local/bin/kubectl` with a symlink to the K3s binary (`kubectl -> k3s`), so `kubectl` was reading K3s's kubeconfig instead of the AKS one Azure CLI had written to `~/.kube/config`.
-
-**Fix**: installed the official Kubernetes `kubectl` client and replaced the symlink, without touching the K3s installation itself.
-
-**Lesson**: `kubectl` is only a CLI client talking to whichever cluster its active context/kubeconfig points to — it isn't tied to any specific cluster. A tool that ships its own `kubectl` symlink can silently redirect all cluster interactions.
-
----
-
-## 6. AKS OIDC Issuer Feature Cannot Be Disabled
+## 2. AKS OIDC Issuer Feature Cannot Be Disabled
 
 **Symptom**: `terraform apply` failed updating the AKS cluster (triggered by adding the Key Vault CSI provider add-on): `OIDCIssuerFeatureCannotBeDisabled`. The plan showed `oidc_issuer_enabled = true -> null`.
 
@@ -76,7 +30,7 @@ Real issues encountered while building this project, with root causes and fixes 
 
 ---
 
-## 7. CSI Driver Failing to Authenticate — Multiple Managed Identities
+## 3. CSI Driver Failing to Authenticate — Multiple Managed Identities
 
 **Symptom**: a test pod mounting a Key Vault secret stayed stuck in `ContainerCreating`, with `FailedMount`: `ManagedIdentityCredential: ... Multiple user assigned identities exist, please specify the clientId`.
 
@@ -88,7 +42,7 @@ Real issues encountered while building this project, with root causes and fixes 
 
 ---
 
-## 8. GitLab OIDC Federation — Authentication Flow Misconfiguration
+## 4. GitLab OIDC Federation — Authentication Flow Misconfiguration
 
 **Symptom**: l'authentification du pipeline GitLab vers Azure devait fonctionner sans stocker de `client_secret`, mais la configuration OIDC nécessitait de distinguer correctement les différents tokens et leurs audiences.
 
@@ -98,7 +52,7 @@ Real issues encountered while building this project, with root causes and fixes 
 
 **Lesson**: OIDC n'est pas simplement « activer un token ». La fédération repose sur une correspondance précise entre issuer + subject + audience. Une mauvaise audience ou un mauvais sujet peut rendre un token parfaitement valide inutilisable auprès d'Azure.
 
-## 9. AKS Workload Identity Not Fully Enabled
+## 5. AKS Workload Identity Not Fully Enabled
 
 **Symptom**: après avoir activé `l'OIDC issuer` sur AKS, l'intégration destinée à permettre aux workloads Kubernetes d'utiliser une identité Azure ne fonctionnait pas encore comme prévu.
 
@@ -113,7 +67,7 @@ Puis vérification de l'état réel du cluster avec Azure CLI.
 
 **Lesson**: dans AKS, OIDC issuer et Workload Identity sont complémentaires mais distincts. L'OIDC issuer permet au cluster de fournir l'identité fédérée du workload ; Workload Identity permet ensuite d'utiliser cette fédération pour obtenir une identité Microsoft Entra.
 
-## 10. Migration from Node Managed Identity to Workload Identity
+## 6. Migration from Node Managed Identity to Workload Identity
 
 **Symptom**: la configuration initiale du Key Vault CSI Driver reposait sur useVMManagedIdentity: "true" et l'identité du cluster/node. Cette approche devenait problématique dans un cluster possédant plusieurs Managed Identities.
 
@@ -139,7 +93,7 @@ Azure Key Vault
 
 **Lesson**: une identité attachée au node et une identité attachée au workload répondent à des besoins différents. Workload Identity permet une granularité beaucoup plus fine et évite de donner à plusieurs workloads les mêmes privilèges Azure.
 
-## 11. Workload Identity Federation — ServiceAccount / Managed Identity Trust
+## 7. Workload Identity Federation — ServiceAccount / Managed Identity Trust
 
 **Symptom**: après avoir activé Workload Identity, le pod devait encore être explicitement associé à l'identité Azure appropriée pour pouvoir accéder au Key Vault.
 
@@ -157,7 +111,7 @@ Le subject permet notamment d'identifier le ServiceAccount Kubernetes concerné.
 
 **Lesson**: Workload Identity repose sur une relation de confiance explicite. Posséder un ServiceAccount Kubernetes et une Managed Identity Azure ne suffit pas : la fédération entre les deux doit être configurée.
 
-## 12. Key Vault Access — Authentication vs Authorization
+## 8. Key Vault Access — Authentication vs Authorization
 
 **Symptom**: même après avoir mis en place l'identité permettant au workload de s'authentifier auprès d'Azure, l'accès au secret Key Vault nécessitait encore une configuration supplémentaire.
 
@@ -181,7 +135,7 @@ La Managed Identity devait donc recevoir les permissions nécessaires sur le Key
 
 **Lesson**: une authentification réussie ne signifie pas qu'une opération Azure est autorisée. Il faut toujours distinguer identité et permissions.
 
-## 13. Key Vault CSI / Workload Identity Integration
+## 9. Key Vault CSI / Workload Identity Integration
 
 **Symptom**: le workload devait récupérer les secrets stockés dans Azure Key Vault sans stocker de credentials Azure dans Kubernetes.
 
@@ -216,7 +170,7 @@ Pod
 
 ---
 
-## 14. Trivy Security Gate Blocking the Pipeline
+## 10. Trivy Security Gate Blocking the Pipeline
 
 **Symptom**: `container_scan` failed after enabling `trivy image --exit-code 1 --severity HIGH,CRITICAL`, reporting HIGH vulnerabilities in the Alpine base image (`libexpat`, `p11-kit`, `p11-kit-trust`) while the application JAR itself was clean.
 
@@ -232,19 +186,7 @@ Pod
 
 ---
 
-## 15. CLI Binary Accidentally Committed, Exceeding GitLab File Size Limit
-
-**Symptom**: `git push` rejected — a 238 MiB blob (`argocd-linux-amd64`) exceeded the 100 MiB limit, already present in local commit history (not just staged).
-
-**Diagnosis**: the ArgoCD CLI binary had been downloaded directly inside the project directory and picked up by a broad `git add`. Because it was already committed, `.gitignore` alone wouldn't remove it.
-
-**Fix**: added it to `.gitignore`; purged it from history with `git filter-repo --path "argocd-linux-amd64" --invert-paths --force` (re-adding the remote afterward, since `filter-repo` strips it as a safety measure); moved the binary to `/usr/local/bin` to prevent recurrence.
-
-**Lesson**: CLI tools should never live inside a project's working directory. A blob already committed requires history rewriting (`git filter-repo`/`git filter-branch`) — `.gitignore` and `git rm --cached` alone are not enough once it's in history.
-
----
-
-## 16. CreateContainerConfigError — Non-Numeric User with `runAsNonRoot`
+## 11. CreateContainerConfigError — Non-Numeric User with `runAsNonRoot`
 
 **Symptom**: after the ArgoCD sync, the pod failed to start: `Error: container has runAsNonRoot and image has non-numeric user (spring), cannot verify user is non-root`. As a side effect, the HPA also reported `<unknown>` CPU/memory metrics.
 
@@ -256,7 +198,7 @@ Pod
 
 ---
 
-## 17. Kustomize Load Restriction — Cannot Reference Files Outside Overlay Root
+## 12. Kustomize Load Restriction — Cannot Reference Files Outside Overlay Root
 
 **Symptom**: `kubectl kustomize k8s/overlays/dev` failed: `accumulating resources ... file '.../k8s/security/network-policies/default-deny-all.yaml' is not in or below '.../k8s/overlays/dev': must build at directory`.
 
@@ -268,7 +210,7 @@ Pod
 
 ---
 
-## 18. GitLab CI Bot Token Rejected on Protected Branch
+## 13. GitLab CI Bot Token Rejected on Protected Branch
 
 **Symptom**: the CI job that commits the updated image tag back to the repo failed: `You are not allowed to push code to protected branches on this project. (pre-receive hook declined)` — despite the Project Access Token having `write_repository` scope.
 
@@ -280,7 +222,7 @@ Pod
 
 ---
 
-## 19. Prometheus Showing "No Data" — Missing ServiceMonitor
+## 14. Prometheus Showing "No Data" — Missing ServiceMonitor
 
 **Symptom**: Prometheus had no data at all for the application; even a manually built Grafana panel showed nothing, with no error anywhere.
 
@@ -292,7 +234,7 @@ Pod
 
 ---
 
-## 20. 404 Scraping `/actuator/prometheus`
+## 15. 404 Scraping `/actuator/prometheus`
 
 **Symptom**: once the ServiceMonitor was in place, Prometheus reported `Error scraping target: server returned HTTP status 404`.
 
@@ -310,7 +252,7 @@ Pod
 
 ---
 
-## 21. New Pod Stuck in Pending — Insufficient CPU
+## 16. New Pod Stuck in Pending — Insufficient CPU
 
 **Symptom**: the corrected pod (issue #14) sat `Pending` for 40+ minutes while the older pod kept running.
 
@@ -324,8 +266,7 @@ Pod
 **Lesson**: on a resource-constrained cluster, a `Pending` pod is very often a capacity problem caused by *co-located* workloads rather than the workload itself being misconfigured — isolating observability onto its own node pool resolved the recurring contention rather than just patching the symptom each time.
 
 ---
-
-## 22. DNS Breakage After Applying `default-deny-all` NetworkPolicy
+## 17. DNS Breakage After Applying `default-deny-all` NetworkPolicy
 
 **Symptom**: after applying the default-deny Network Policy, the application pod could no longer resolve any hostname, including internal Kubernetes service names.
 
@@ -337,7 +278,7 @@ Pod
 
 ---
 
-## 23. ArgoCD Application Controller OOMKilled — Stale Sync Status
+## 18. ArgoCD Application Controller OOMKilled — Stale Sync Status
 
 **Symptom**: `portfolio-app-dev` stayed `OutOfSync`/degraded in the ArgoCD UI even though the actual Deployment was healthy. `kubectl get pods -n argocd` showed `argocd-application-controller-0` in a repeated `OOMKilled` crash loop.
 
@@ -360,7 +301,7 @@ Pod
 
 ---
 
-## 24. Grafana p95 Latency Panel Showing "No Data"
+## 19. Grafana p95 Latency Panel Showing "No Data"
 
 **Symptom**: three of the four panels in the custom Grafana dashboard displayed real data (HTTP request rate, CPU usage, HPA replica count), but "Latence p95" consistently showed "No data".
 

@@ -155,11 +155,10 @@ CI: GitLab CI → SAST + Unit test → Build → Trivy scan → Push to ACR → 
 │  │                                                      │  │
 │  └──────────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────┘
-
-
+```
 GitOps Flow
 ───────────
-
+```text
 GitLab CI
     │
     │ Update Kubernetes image tag
@@ -174,9 +173,11 @@ ArgoCD
     ▼
 AKS
 
+```
 
 Identity & Secrets Flow
 ───────────────────────
+```text
 
                     AZURE
                       │
@@ -199,10 +200,10 @@ AKS kubelet identity          UAMI / Workload Identity
                                     ▲
                                     │
                              Application Pod
-
+```
 Observability Flow
 ──────────────────
-
+```text
 Application
       │
       │ /actuator/prometheus
