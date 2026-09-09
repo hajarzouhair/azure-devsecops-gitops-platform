@@ -37,7 +37,8 @@ resource "azurerm_cognitive_account" "foundry" {
 # --------------------------------------------------------------------------
 # Déploiement du modèle — gpt-4.1-mini : suffisant pour l'investigation
 # d'incidents, nettement moins cher que gpt-4o, pas de coût horaire
-# (facturation au token, contrairement aux nœuds AKS).
+# (facturation au token, contrairement aux nœuds AKS). (the model gpt-4.1-mini
+# was deprecated mid-project, and benn replaced by the gpt-5-mini model)
 # --------------------------------------------------------------------------
 resource "azurerm_cognitive_deployment" "agent_model" {
   name                 = "gpt-4.1-mini"

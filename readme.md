@@ -42,7 +42,7 @@ different concerns and different failure modes:
 
 | | |
 |---|---|
-| **DevSecOps pipeline** | Build → SAST → Trivy scan → Cosign sign + SBOM → GitOps deploy, wrapped in Kyverno policy enforcement and zero-trust network policies |
+| **DevSecOps pipeline** | SAST → Build → Trivy scan → Push to ACR → Cosign sign + SBOM → GitOps deploy, wrapped in Kyverno policy enforcement and zero-trust network policies |
 | **AI agent** | Azure AI Foundry agent, connected to a read-only Kubernetes MCP tool, a read-only Prometheus MCP tool, and a Knowledge Base built on Azure AI Search |
 
 See each component's README for the full diagram and the reasoning
@@ -82,7 +82,7 @@ enforcement) · Kubernetes NetworkPolicies (zero-trust)
 **Observability:** Prometheus · Grafana (dashboard-as-code via
 ConfigMap) · Prometheus Pushgateway
 
-**AI agent:** Azure AI Foundry (`gpt-4.1-mini`, GlobalStandard) ·
+**AI agent:** Azure AI Foundry (`gpt-5-mini`, GlobalStandard) ·
 Model Context Protocol (Kubernetes MCP, Prometheus MCP) · Azure AI
 Search (Knowledge Base / RAG) · NGINX Ingress + cert-manager /
 Let's Encrypt

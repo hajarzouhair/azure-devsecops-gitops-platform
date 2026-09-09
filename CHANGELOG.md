@@ -17,7 +17,7 @@ incident was still a fully manual process.
 ### Added
 
 - **Azure AI Foundry agent** (`k8s-incident-investigator`,
-  `gpt-5`, `GlobalStandard`), scoped to diagnose only — no
+  `gpt-5-mini`, `GlobalStandard`), scoped to diagnose only — no
   write access to the cluster, ever.
 - **Two read-only MCP tools**: a Kubernetes MCP server and a
   Prometheus MCP server, exposed via an authenticated Ingress

@@ -21,8 +21,7 @@ README's roadmap.
 originally planned `Standard` SKU (regional, data guaranteed to stay
 in-region) was rejected by Azure in `francecentral`, and the
 originally planned model (`gpt-4o-mini`) was later deprecated
-mid-project. `GlobalStandard` was used instead — cheaper and more
-widely available, but does not guarantee the request is processed
+mid-project. `gpt-5-mini GlobalStandard` was used instead, but does not guarantee the request is processed
 within a specific region. Acceptable here: no data residency
 requirement for this project. See `ai-agent/docs/ai-agent-troubleshooting.md`
 §10.

@@ -53,7 +53,7 @@ A production-style Kubernetes platform built on Azure (AKS), designed around a *
                                   │  └─────────────┘             │
                                   └──────────────────────────────┘
 
-CI: GitLab CI → SAST → Trivy scan → Image signing + SBOM → Push to ACR → Update manifest (GitOps)
+CI: GitLab CI → SAST + Unit test → Build → Trivy scan → Push to ACR → Image signing + SBOM → AI Security Review → Update manifest (GitOps)
 
 ```
 
@@ -69,6 +69,7 @@ CI: GitLab CI → SAST → Trivy scan → Image signing + SBOM → Push to ACR �
 │ SAST                 │
 │ Trivy                │
 │ Cosign + SBOM        │
+│ Update Manifest      │
 └──────────┬───────────┘
            │
            │ Build / Scan / Sign
@@ -235,6 +236,7 @@ The application exposes JVM and HTTP metrics through Spring Boot Actuator. Prome
 This architecture combines **Infrastructure as Code, secure CI/CD, GitOps, workload identity, centralized secrets management, runtime security, autoscaling, and observability** into a single Kubernetes platform.
 
 ```
+```
 
 The pipeline never deploys directly to the cluster. It builds, scans, signs, and pushes an image, then updates a Kubernetes manifest in Git — **ArgoCD is the only component with write access to the cluster**, pulling the desired state from Git. This split between a *push-based CI* and a *pull-based CD* is the defining principle of GitOps, and it's a deliberate architectural choice here, not a default.
 
@@ -390,6 +392,7 @@ This provides a passwordless, identity-based authentication mechanism for Kubern
 │                              │
 │ Secret available at runtime  │
 └──────────────────────────────┘
+```text
 ```
 
 ### How Workload Identity Works
@@ -628,7 +631,7 @@ The deployment pipeline only manages the application and Kubernetes configuratio
 
 ## 7. Observability & Alerting
 
-**Metrics collection**: Prometheus (`kube-prometheus-stack`, configured via `observability/values-monitoring.yaml`, scheduled on the dedicated `monitoring` node pool) scrapes two levels of metrics:
+- **Metrics collection**: Prometheus (`kube-prometheus-stack`, configured via `observability/values-monitoring.yaml`, scheduled on the dedicated `monitoring` node pool) scrapes two levels of metrics:
 - **Infrastructure-level** — node-exporter, kube-state-metrics, available out of the box.
 - **Application-level** — JVM and HTTP metrics exposed by the Spring Boot app via Micrometer/Actuator (`/actuator/prometheus`), discovered through the `ServiceMonitor` in `k8s/overlays/dev/servicemonitor.yaml`. Prometheus does **not** auto-discover custom applications — this has to be declared explicitly, and the ServiceMonitor's `release` label must match what the Helm release expects, or it's silently ignored (see troubleshooting issue #13).
 

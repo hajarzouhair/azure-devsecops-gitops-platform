@@ -1,3 +1,24 @@
+# AI Incident Investigator — Azure AI Foundry & Kubernetes
+
+An AI-powered incident investigation agent built on top of the **Azure Kubernetes Service (AKS)** platform, designed to assist with **real-time Kubernetes troubleshooting and observability-driven incident analysis**. The agent connects operational telemetry, Kubernetes cluster information, Prometheus metrics, logs, and the project knowledge base to investigate incidents, identify potential root causes, and provide actionable remediation guidance.
+
+The solution is built around **Azure AI Foundry**, with secure access to Azure and Kubernetes resources through **Microsoft Entra Workload Identity**, avoiding long-lived credentials inside the agent workload. The agent can interact with the Kubernetes environment through dedicated tools and consume observability data from the monitoring stack to correlate application behavior, resource usage, and cluster events.
+
+> The AI agent is an operational extension of the Secure Cloud Platform on Azure. It does not replace Kubernetes, Prometheus, Grafana, or ArgoCD; instead, it uses the information exposed by these components to accelerate incident investigation and troubleshooting.
+
+> The complete DevSecOps, GitOps, security, workload identity, autoscaling, and observability architecture is documented in [~/hajar-azure-project/docs/devsecops-README.md](~/hajar-azure-project/docs/devsecops-README.md).
+
+---
+
+## Architecture Overview
+
+![Architecture Overview](agent_architecture/architecture_agent.png)
+
+
+The AI Incident Investigator sits on top of the existing Kubernetes platform and connects **Azure AI Foundry**, **Kubernetes tools**, **Prometheus metrics**, **application logs**, and the **project knowledge base** into a single investigation workflow.
+
+The agent therefore provides an intelligent investigation layer above the existing **DevSecOps + GitOps + Observability** platform, while preserving the security boundaries and identity mechanisms already established in the cluster.
+
 # AI Incident Investigation Agent — Complete Technical README
 
 This document covers the entire AI/agent portion of the DevSecOps portfolio
@@ -47,7 +68,7 @@ policies, or GitOps controls.
                          │   Azure AI Foundry         │
                          │   Agent: k8s-incident-     │
                          │   investigator             │
-                         │   Model: gpt-4.1-mini      │
+                         │   Model: gpt-5-mini        │
                          │   (GlobalStandard SKU)     │
                          └──────────────┬─────────────┘
                                         │
@@ -89,7 +110,7 @@ policies, or GitOps controls.
 
 | Component | Choice | Why |
 |---|---|---|
-| Model | `gpt-4.1-mini`, SKU `GlobalStandard` | Cost-efficient, token-based billing. The originally planned `gpt-4o-mini` (SKU `Standard`) was rejected by Azure mid-project — see §6.1 |
+| Model | `gpt-5-mini`, SKU `GlobalStandard` | Cost-efficient, token-based billing. The originally planned `gpt-4o-mini` (SKU `Standard`) was rejected by Azure mid-project — see §6.1 |
 | Foundry auth | Azure AD only (`local_auth_enabled = false`) | Consistent with the rest of the project (ACR, Key Vault) — no static API keys |
 | Kubernetes MCP | `containers/kubernetes_mcp_server` (note: underscore in the real image repo, not a hyphen) | Actively maintained, configurable strict read-only mode, explicit denial of `Secret` resources |
 | Prometheus MCP | `pab1it0/prometheus-mcp-server` (pinned version, HTTP transport enabled via env vars) | Read-only by design |
@@ -161,7 +182,7 @@ Agent: k8s-incident-investigator
 Every real incident encountered while building this agent — model
 deprecation, quota limits, RBAC gaps, TLS/networking issues, CI
 authentication failures, and more — is documented separately in
-[`ai-agent/docs/ai-agent-troubleshooting.md`](./ai-agent/docs/ai-agent-troubleshooting.md), in the order it
+[`ai-agent/docs/ai-agent-troubleshooting.md`](ai-agent-troubleshooting.md), in the order it
 occurred. Kept out of this file so architecture and incident history
 stay independently readable.
 
