@@ -6,7 +6,7 @@ The solution is built around **Azure AI Foundry**, with secure access to Azure a
 
 > The AI agent is an operational extension of the Secure Cloud Platform on Azure. It does not replace Kubernetes, Prometheus, Grafana, or ArgoCD; instead, it uses the information exposed by these components to accelerate incident investigation and troubleshooting.
 
-> The complete DevSecOps, GitOps, security, workload identity, autoscaling, and observability architecture is documented in [~/hajar-azure-project/docs/devsecops-README.md](~/hajar-azure-project/docs/devsecops-README.md).
+> The complete DevSecOps, GitOps, security, workload identity, autoscaling, and observability architecture is documented in [~/hajar-azure-project/docs/devsecops-README.md](../../docs/devsecops-README.md).
 
 ---
 
