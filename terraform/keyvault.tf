@@ -40,3 +40,46 @@ resource "azurerm_role_assignment" "current_user_keyvault_admin" {
   role_definition_name = "Key Vault Administrator"
   scope                = azurerm_key_vault.main.id
 }
+
+# --------------------------------------------------------------------------
+# Identité dédiée à l'application (Workload Identity), distincte de
+# l'identité interne de l'add-on key_vault_secrets_provider ci-dessus.
+# C'est CETTE identité que le pod utilise réellement pour lire ses secrets.
+# --------------------------------------------------------------------------
+resource "azurerm_user_assigned_identity" "portfolio_app" {
+  name                = "id-${var.project_name}-app-${var.environment}"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+
+  tags = {
+    project = var.project_name
+  }
+}
+
+# --------------------------------------------------------------------------
+# Autorisation RBAC : cette identité peut lire (get/list) les secrets du
+# Key Vault, rien de plus. Principe du moindre privilège, comme pour
+# l'identité de l'add-on ci-dessus.
+# --------------------------------------------------------------------------
+resource "azurerm_role_assignment" "portfolio_app_keyvault_secrets_user" {
+  principal_id         = azurerm_user_assigned_identity.portfolio_app.principal_id
+  role_definition_name = "Key Vault Secrets User"
+  scope                = azurerm_key_vault.main.id
+}
+
+# --------------------------------------------------------------------------
+# Federated Identity Credential : établit la relation de confiance entre
+# l'OIDC issuer du cluster AKS et cette identité, pour EXACTEMENT le
+# ServiceAccount Kubernetes portfolio-app-sa dans le namespace dev.
+# Si le namespace ou le nom du ServiceAccount changent côté k8s, cette
+# valeur doit être mise à jour ici aussi, sinon la fédération échoue
+# silencieusement (aucune erreur, juste jamais authentifié).
+# --------------------------------------------------------------------------
+resource "azurerm_federated_identity_credential" "portfolio_app" {
+  name                = "fic-${var.project_name}-app-${var.environment}"
+  resource_group_name = azurerm_resource_group.main.name
+  parent_id           = azurerm_user_assigned_identity.portfolio_app.id
+  audience            = ["api://AzureADTokenExchange"]
+  issuer              = azurerm_kubernetes_cluster.main.oidc_issuer_url
+  subject             = "system:serviceaccount:dev:portfolio-app-sa"
+}

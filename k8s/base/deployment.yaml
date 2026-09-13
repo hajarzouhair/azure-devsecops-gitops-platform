@@ -48,7 +48,7 @@ spec:
             limits:
               cpu: "300m"
               memory: "256Mi"
-          # Probes Spring Boot Actuator (à activer côté app si pas déjà fait :
+          # Probes Spring Boot Actuator activé côté app :
           # dépendance spring-boot-starter-actuator dans le pom.xml).
           readinessProbe:
             httpGet:

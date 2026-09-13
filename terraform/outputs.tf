@@ -27,3 +27,8 @@ output "key_vault_name" {
   description = "Nom du Key Vault (utilisé dans le SecretProviderClass Kubernetes)"
   value       = azurerm_key_vault.main.name
 }
+
+output "portfolio_app_identity_client_id" {
+  description = "Client ID de l'UAMI applicative — à référencer dans serviceaccount.yaml et secret-provider-class.yaml"
+  value       = azurerm_user_assigned_identity.portfolio_app.client_id
+}
