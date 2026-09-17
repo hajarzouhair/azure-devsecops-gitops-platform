@@ -28,7 +28,7 @@ A production-style Kubernetes platform built on Azure (AKS), designed around a *
 
 ## Cluster Overview
 
-```
+```text
 ┌─────────────┐     ┌──────────────┐     ┌───────────────┐
 │  Terraform  │────▶│  Azure (AKS, │────▶│    ArgoCD     │
 │  (IaC)      │     │  ACR, Vault) │     │ (Application) │
@@ -45,7 +45,7 @@ A production-style Kubernetes platform built on Azure (AKS), designed around a *
                                   │  └─────┬──────┘              │
                                   │        │ scrape              │
                                   │  node pool "monitoring"      │
-                                  │        │                     │ 
+                                  │        │                     │
                                   │  ┌─────▼───────┐  (dedicated,│
                                   │  │ Prometheus  │   tainted)  │
                                   │  │  Grafana    │             │
@@ -54,7 +54,6 @@ A production-style Kubernetes platform built on Azure (AKS), designed around a *
                                   └──────────────────────────────┘
 
 CI: GitLab CI → SAST + Unit test → Build → Trivy scan → Push to ACR → Image signing + SBOM → AI Security Review → Update manifest (GitOps)
-
 ```
 
 ## Architecture Overview
@@ -102,7 +101,7 @@ CI: GitLab CI → SAST + Unit test → Build → Trivy scan → Push to ACR → 
 │  │  └──────────┬───────────┘                            │  │
 │  │             │ sync                                   │  │
 │  │             ▼                                        │  │
-│  │  ┌──────────────────────────────────────────────┐    │  │ 
+│  │  ┌──────────────────────────────────────────────┐    │  │
 │  │  │              Application Pod                 │    │  │
 │  │  │                                              │    │  │
 │  │  │ Spring Boot                                  │    │  │
@@ -156,6 +155,7 @@ CI: GitLab CI → SAST + Unit test → Build → Trivy scan → Push to ACR → 
 │  └──────────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────┘
 ```
+
 GitOps Flow
 ───────────
 ```text
@@ -172,13 +172,11 @@ ArgoCD
     │ Apply desired state
     ▼
 AKS
-
 ```
 
 Identity & Secrets Flow
 ───────────────────────
 ```text
-
                     AZURE
                       │
         ┌─────────────┴─────────────┐
@@ -201,6 +199,7 @@ AKS kubelet identity          UAMI / Workload Identity
                                     │
                              Application Pod
 ```
+
 Observability Flow
 ──────────────────
 ```text
@@ -236,9 +235,6 @@ The application exposes JVM and HTTP metrics through Spring Boot Actuator. Prome
 
 This architecture combines **Infrastructure as Code, secure CI/CD, GitOps, workload identity, centralized secrets management, runtime security, autoscaling, and observability** into a single Kubernetes platform.
 
-```
-```
-
 The pipeline never deploys directly to the cluster. It builds, scans, signs, and pushes an image, then updates a Kubernetes manifest in Git — **ArgoCD is the only component with write access to the cluster**, pulling the desired state from Git. This split between a *push-based CI* and a *pull-based CD* is the defining principle of GitOps, and it's a deliberate architectural choice here, not a default.
 
 Currently a single ArgoCD `Application` is wired for the `dev` environment (see [Roadmap](#roadmap) for extending this to `staging` / multi-environment).
@@ -270,7 +266,7 @@ The entire Azure footprint is provisioned declaratively rather than clicked toge
 - **`aks.tf`** — AKS cluster definition: default node pool sizing, Kubernetes version, networking mode, OIDC issuer, Microsoft Entra Workload Identity, and Key Vault Secrets Provider integration.
 - **`acr.tf`** — Azure Container Registry, admin account disabled, with role assignments scoped to the AKS managed identity (no static credentials needed to pull images).
 - **`keyvault.tf`** — Azure Key Vault, User Assigned Managed Identity, and Azure RBAC role assignments used for workload-level secret access.
-- **`monitoring-node-pool.tf`** — a **dedicated, tainted node pool** for the observability stack (Prometheus, Grafana, Alertmanager), isolated from the application node pool. This separation matters in practice: without it, the monitoring stack and the application compete for the same CPU/memory budget, which becomes a real scheduling bottleneck on small clusters (see troubleshooting log, issue #15).
+- **`monitoring-node-pool.tf`** — a **dedicated, tainted node pool** for the observability stack (Prometheus, Grafana, Alertmanager), isolated from the application node pool. This separation matters in practice: without it, the monitoring stack and the application compete for the same CPU/memory budget, which becomes a real scheduling bottleneck on small clusters (see troubleshooting log, issue #13).
 - **`providers.tf` (backend block)** + **`scripts/bootstrap-backend.sh`** — remote state configuration. Terraform state is stored remotely in Azure Storage (not locally), so state is shared safely and isn't lost/corrupted between machines — the bootstrap script provisions the storage backend itself before the main configuration can run.
 - **`outputs.tf` / `variables.tf`** — parameterization for multi-environment reuse (dev/staging) without duplicating the configuration.
 
@@ -310,16 +306,15 @@ Git is the single source of truth for the cluster's desired state. ArgoCD contin
 Independent layers enforce constraints at runtime, so no single misconfiguration compromises the whole cluster:
 
 **Kyverno (`k8s/security/kyverno/`)**, enforced (not just audited):
-- `disallow-root-user.yaml` — rejects any pod that doesn't run as a non-root, **numeric** UID at admission time (see troubleshooting issue #10 for why "numeric" specifically matters).
+- `disallow-root-user.yaml` — rejects any pod that doesn't run as a non-root, **numeric** UID at admission time (see troubleshooting issue #8 for why "numeric" specifically matters).
 - `disallow-latest-tag.yaml` — rejects any pod referencing an image tagged `:latest`, forcing every deployment to reference an immutable, traceable tag (a Git commit SHA, set automatically by the CI pipeline).
 
 **Network Policies (`k8s/security/network-policies/`)** — a zero-trust networking model, built in explicit layers:
 - `default-deny-all.yaml` — the foundation: no traffic is allowed by default, in or out, for any pod in the `dev` namespace.
-- `allow-dns.yaml` — without this, `default-deny-all` also blocks DNS resolution to CoreDNS (port 53), breaking everything the app needs to resolve by name. A common first mistake when adopting default-deny (see troubleshooting issue #16).
+- `allow-dns.yaml` — without this, `default-deny-all` also blocks DNS resolution to CoreDNS (port 53), breaking everything the app needs to resolve by name. A common first mistake when adopting default-deny (see troubleshooting issue #14).
 - `allow-app-ingress.yaml` — the only inbound traffic explicitly permitted: requests to the application's port, which also covers kubelet probes and Prometheus scraping.
 
 **Access control**: no static credentials anywhere in the stack — ACR access is via the AKS managed identity (`AcrPull` role), Key Vault access via a dedicated managed identity (`Key Vault Secrets User` role), and the CI automation token is scoped to the minimum GitLab role needed to push manifest updates.
- agent-knowledge.md
 
 ---
 
@@ -393,7 +388,6 @@ This provides a passwordless, identity-based authentication mechanism for Kubern
 │                              │
 │ Secret available at runtime  │
 └──────────────────────────────┘
-```text
 ```
 
 ### How Workload Identity Works
@@ -621,12 +615,11 @@ The secret value therefore does not need to be stored in Git or transmitted thro
 
 The deployment pipeline only manages the application and Kubernetes configuration; it does not need to contain the secret value itself.
 
-
 ---
 
 ## 6. Autoscaling
 
-`k8s/base/hpa.yaml` defines a **Horizontal Pod Autoscaler** that scales the application's replica count (1 to 4) based on observed CPU and memory utilization against the requests defined in the Deployment. HPA thresholds are only meaningful if the underlying resource *requests* are realistic — this is directly tied to the capacity issues documented in troubleshooting issue #15.
+`k8s/base/hpa.yaml` defines a **Horizontal Pod Autoscaler** that scales the application's replica count (1 to 4) based on observed CPU and memory utilization against the requests defined in the Deployment. HPA thresholds are only meaningful if the underlying resource *requests* are realistic — this is directly tied to the capacity issues documented in troubleshooting issue #13.
 
 ---
 
@@ -634,7 +627,7 @@ The deployment pipeline only manages the application and Kubernetes configuratio
 
 - **Metrics collection**: Prometheus (`kube-prometheus-stack`, configured via `observability/values-monitoring.yaml`, scheduled on the dedicated `monitoring` node pool) scrapes two levels of metrics:
 - **Infrastructure-level** — node-exporter, kube-state-metrics, available out of the box.
-- **Application-level** — JVM and HTTP metrics exposed by the Spring Boot app via Micrometer/Actuator (`/actuator/prometheus`), discovered through the `ServiceMonitor` in `k8s/overlays/dev/servicemonitor.yaml`. Prometheus does **not** auto-discover custom applications — this has to be declared explicitly, and the ServiceMonitor's `release` label must match what the Helm release expects, or it's silently ignored (see troubleshooting issue #13).
+- **Application-level** — JVM and HTTP metrics exposed by the Spring Boot app via Micrometer/Actuator (`/actuator/prometheus`), discovered through the `ServiceMonitor` in `k8s/overlays/dev/servicemonitor.yaml`. Prometheus does **not** auto-discover custom applications — this has to be declared explicitly, and the ServiceMonitor's `release` label must match what the Helm release expects, or it's silently ignored (see troubleshooting issue #11).
 
 **Dashboards**: `observability/dashboard-portfolio-app.json` is a Grafana dashboard **versioned in the repository** and loaded automatically via a labeled ConfigMap (`observability/dashboard-configmap.yaml`), rather than existing only as a manually imported dashboard in the Grafana UI — the visualization is reproducible and survives a Grafana pod restart, not a manual click-through step that has to be redone.
 
@@ -652,7 +645,6 @@ Alertmanager (part of `kube-prometheus-stack`) receives firing alerts, closing t
 ## Repository Structure
 
 ```text
-
 .
 ├── .gitignore
 ├── .gitlab-ci.yml                         # GitLab CI/CD pipeline
@@ -773,7 +765,6 @@ Alertmanager (part of `kube-prometheus-stack`) receives firing alerts, closing t
 ├── mvnw.cmd
 ├── pom.xml
 └── readme.md
-
 ```
 
 ### Key Architectural Areas
@@ -842,7 +833,6 @@ Full step-by-step detail, including every error actually hit along the way, is i
 
 [`screenshots`](screenshots)
 
-```
 ---
 
 **Author**: Hajar Zouhair — DevOps/DevSecOps Engineer

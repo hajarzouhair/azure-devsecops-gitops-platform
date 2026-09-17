@@ -13,18 +13,7 @@ Two parts:
 
 ## 1. Terraform — Azure region unavailable
 
-**Context**: Initial infrastructure provisioning in `westeurope`.
-
-**Symptom**:
-
-```text
-RequestDisallowedByAzure:
-The selected region is currently not accepting new customers.
-```
-
-**Diagnosis**: Azure imposed a restriction on the region for this subscription; this was not a Terraform syntax error.
-
-**Fix**: Changed the region from `westeurope` to `francecentral`. Provisioning then continued normally.
+Same regional restriction already documented on the main platform project (`devsecops-troubleshooting.md`, issue #1): `westeurope` was rejecting new customers on this subscription. Fixed the same way — switched the region to `francecentral` — and provisioning continued normally. Not repeated in full detail here since the root cause and fix are identical.
 
 ---
 
@@ -46,22 +35,19 @@ Successfully tested with `HTTP 200` against `/indexes`.
 
 ---
 
-## 3. Azure AI Search — Search Service permissions
+## 3. RBAC — Managed identity permissions across Search, Storage & Foundry
 
-**Context**: The indexer needed access to Blob Storage and Azure AI processing capabilities.
+**Context**: Both the indexer and the Knowledge Base needed correctly scoped access, and this required granting roles to two distinct managed identities in turn.
 
-**Fix**: Granted the Search Service managed identity (`4b062e98-41e2-47a2-aef2-c90f12d35de7`) the following roles:
+**Fixes**:
 
-- `Storage Blob Data Reader` on `stfhajarazuredev`
-- `Cognitive Services OpenAI User` on `aif-hajar-azure-project-dev`
+- Granted the Search Service managed identity (`4b062e98-41e2-47a2-aef2-c90f12d35de7`):
+  - `Storage Blob Data Reader` on `stfhajarazuredev`
+  - `Cognitive Services OpenAI User` on `aif-hajar-azure-project-dev`
+- Granted the Foundry project managed identity (`7995e511-da7d-4c9a-a2a6-6500468ef404`):
+  - `Search Index Data Reader`, scoped specifically to the Azure AI Search resource
 
-**Result**: Indexing succeeded — `status: success, processed: 1, failed: 0`.
-
----
-
-## 4. Knowledge Base — Foundry project permission
-
-**Fix**: Granted the `Search Index Data Reader` role to the Foundry project managed identity (`7995e511-da7d-4c9a-a2a6-6500468ef404`), scoped specifically to the Azure AI Search resource.
+**Result**: Indexing succeeded (`status: success, processed: 1, failed: 0`), and the Knowledge Base could subsequently query the index.
 
 **Verification**:
 
@@ -71,9 +57,11 @@ az role assignment list --assignee-object-id "7995e511-..." \
   --query "[].{Role:roleDefinitionName,PrincipalId:principalId}" -o table
 ```
 
+**Lesson**: verify the exact `principalId` rather than relying only on a resource name — the Search Service identity and the Foundry project identity are easy to confuse when assigning RBAC roles.
+
 ---
 
-## 5. Foundry Connection — Incorrect initial authentication type
+## 4. Foundry Connection — Incorrect initial authentication type
 
 **Symptom**: The Foundry connection `kb-knowledgebase-qfyjx` initially used `authType: CustomKeys`, which was incompatible with `disableLocalAuth = true` on Azure AI Search.
 
@@ -86,7 +74,7 @@ audience: https://search.azure.com/
 
 ---
 
-## 6. Knowledge Base MCP — HTTP 405 (false positive)
+## 5. Knowledge Base MCP — HTTP 405 (false positive)
 
 **Test**: Sent a `GET` request to the Knowledge Base MCP endpoint.
 
@@ -96,13 +84,11 @@ audience: https://search.azure.com/
 HTTP 405, Allow: POST
 ```
 
-**Interpretation**: This was not an authentication problem. The endpoint existed and was functioning; it simply expected a `POST` request.
-
-A `405` in this context was therefore a sign that the infrastructure was correctly exposed rather than broken.
+**Interpretation**: This was not an authentication problem. The endpoint existed and was functioning; it simply expected a `POST` request. A `405` in this context was therefore a sign that the infrastructure was correctly exposed rather than broken.
 
 ---
 
-## 7. Foundry Agent — Model rate limit
+## 6. Foundry Agent — Model rate limit
 
 **Symptom**:
 
@@ -119,18 +105,9 @@ have exceeded rate limit.
 
 ---
 
-## 8–9. Final validation and grounding
-
-Two tests confirmed that the complete chain was working correctly:
-
-- An open-ended question about the Knowledge Base content allowed the agent to correctly list the indexed documents.
-- A targeted question about the Azure region incident described in section 1 was correctly retrieved and returned by the agent from `troubleshooting.md` itself — proving that retrieval was actually working, rather than relying only on the model's general knowledge.
-
----
-
 # PART 2 — Model, network/cluster infrastructure & CI/CD
 
-## 10. Model deprecation during the project
+## 7. Model deprecation during the project
 
 **Symptom**: `terraform apply` failed twice in a row while deploying the Foundry model:
 
@@ -154,23 +131,23 @@ lifecycle {
 
 This prevents the same deployment from being blocked by future automatic Microsoft model version updates.
 
-> **Important:** This incident documents the historical Terraform migration to `gpt-4.1-mini`. It does not mean that `gpt-4.1-mini` is currently the model used by the Foundry agent. The agent currently uses `gpt-5-mini` due to the rate-limit issue described in incident #7.
+> **Important:** This incident documents the historical Terraform migration to `gpt-4.1-mini`. It does not mean that `gpt-4.1-mini` is currently the model used by the Foundry agent. The agent currently uses `gpt-5-mini` due to the rate-limit issue described in incident #6.
 
 ---
 
-## 11. Azure subscription vCPU quota
+## 8. Azure subscription vCPU quota
 
 **Symptom**: `ErrCode_InsufficientVCPUQuota` when attempting to add a node to the `system` node pool.
 
 **Diagnosis**: The subscription had a regional quota of 4 vCPUs, already fully consumed by the two existing node pools.
 
-**Decision**: No quota increase request was made, as this was considered unreliable for the free subscription. Existing capacity was optimized instead (see #12).
+**Decision**: No quota increase request was made, as this was considered unreliable for the free subscription. Existing capacity was optimized instead (see #9).
 
 ---
 
-## 12. 30 pods/node limit (Azure CNI)
+## 9. 30 pods/node limit (Azure CNI)
 
-**Symptom**: Pods remained `Pending` with `Too many pods`, despite having explicit CPU and memory requests.
+**Symptom**: Pods remained `Pending` with `Too many pods`, despite having explicit CPU and memory requests. The same limit later blocked the cert-manager HTTP-01 solver pod (`cm-acme-http-solver-*`), which also stayed `Pending` for the same reason.
 
 **Diagnosis**: Azure CNI imposed a limit of 30 pods per node, which was nearly reached by system and platform workloads such as CoreDNS, konnectivity, metrics-server, CSI drivers, the Workload Identity webhook, Kyverno, and ArgoCD.
 
@@ -178,11 +155,11 @@ This prevents the same deployment from being blocked by future automatic Microso
 
 - Disabled unused ArgoCD components (`dex-server`, `notifications-controller`, `applicationset-controller`) through a version-controlled Kustomize configuration.
 - Set `strategy.rollingUpdate.maxSurge: 0` on `portfolio-app`.
-- Scheduled AI agent components on the `monitoring` node pool, which had more available capacity, instead of the `system` node pool.
+- Scheduled AI agent components, and later the cert-manager solver pod (via `nodeSelector`/`toleration` on `solvers[].http01.ingress.podTemplate` in the `ClusterIssuer`), on the `monitoring` node pool, which had more available capacity, instead of the `system` node pool.
 
 ---
 
-## 13. SecretProviderClass — Forgotten placeholder, followed by a false lead
+## 10. SecretProviderClass — Forgotten placeholder, followed by a false lead
 
 **Symptom**: Key Vault secret mounting failed with an unusual HTTP 400 response containing a generic ASP.NET error page.
 
@@ -212,7 +189,7 @@ This syntax was not supported by the installed CSI driver version. At the time o
 
 ---
 
-## 14. Inconsistent ACR authentication
+## 11. Inconsistent ACR authentication
 
 **Symptom**: Terraform configured:
 
@@ -238,38 +215,15 @@ No stored secret was required.
 
 ---
 
-## 15. Key Vault — Incomplete Workload Identity configuration
+## 12. Key Vault — Incomplete Workload Identity configuration
 
-**Symptom**: `oidc_issuer_enabled` was active on AKS, but `workload_identity_enabled` was missing, while the `SecretProviderClass` still contained values inherited from the previous infrastructure.
+Same Workload Identity mechanism already built and documented in depth on the main platform project, reapplied here to the agent's own Key Vault access: `oidc_issuer_enabled` was active on AKS, but `workload_identity_enabled` was missing, and the `SecretProviderClass` still contained values inherited from the previous infrastructure.
 
-**Fix**: Completed the Microsoft Entra Workload Identity configuration:
-
-- ServiceAccount annotated with the managed identity `clientID`
-- Automatic injection of a projected federated token by `azure-wi-webhook`
-- Exchange of that token for an Azure access token through Microsoft Entra ID
-- No secret stored inside the cluster
-
-This replaced the previous authentication dependency on static credentials.
+**Fix**: completed the configuration (ServiceAccount annotated with the managed identity `clientID`, projected federated token injected by `azure-wi-webhook`, exchanged for an Azure access token through Microsoft Entra ID) — removing the last dependency on static credentials for this component.
 
 ---
 
-## 16. Complete absence of an Ingress controller
-
-**Symptom**:
-
-```bash
-kubectl get ingressclass
-```
-
-returned no resources.
-
-**Fix**: Installed the NGINX Ingress Controller through Helm and scheduled it on the `monitoring` node pool.
-
-The controller provisions an Azure Load Balancer, introducing an additional hourly infrastructure cost that must be monitored.
-
----
-
-## 17. Kyverno blocking `:latest` images
+## 13. Kyverno blocking `:latest` images
 
 **Symptom**: The `disallow-latest-tag` policy rejected deployments of the MCP servers.
 
@@ -295,7 +249,7 @@ with an underscore.
 
 ---
 
-## 18. Prometheus MCP server stuck in stdio mode
+## 14. Prometheus MCP server stuck in stdio mode
 
 **Symptom**: The pod repeatedly terminated successfully with:
 
@@ -311,7 +265,7 @@ rather than entering `CrashLoopBackOff`.
 
 ---
 
-## 19. Azure Load Balancer health probe incompatible with NGINX
+## 15. Azure Load Balancer health probe incompatible with NGINX
 
 **Symptom**: External traffic timed out, while internal access through the NodePort worked correctly.
 
@@ -327,27 +281,13 @@ service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path
 
 ---
 
-## 20. TLS certificate not associated — hostname typo
+## 16. TLS certificate not associated — hostname typo
 
 **Symptom**: The TLS handshake continued to serve the default self-signed NGINX certificate, even though a valid Let's Encrypt certificate had already been issued.
 
-**Diagnosis**: A manual edit had introduced a mismatch between:
+**Diagnosis**: A manual edit had introduced a mismatch between `spec.rules[].host` and `spec.tls[].hosts` — one dot had been replaced with a hyphen. NGINX associates certificates through exact SNI hostname matching, so the mismatch prevented the correct certificate from being selected.
 
-```yaml
-spec.rules[].host
-```
-
-and:
-
-```yaml
-spec.tls[].hosts
-```
-
-One dot had been replaced with a hyphen.
-
-NGINX associates certificates through exact SNI hostname matching, so the mismatch prevented the correct certificate from being selected.
-
-**Diagnosis command**:
+**Diagnosis command** (useful in general for isolating SNI/certificate mismatches):
 
 ```bash
 openssl s_client -connect <ip>:443 -servername <host-attendu> </dev/null \
@@ -358,83 +298,23 @@ openssl s_client -connect <ip>:443 -servername <host-attendu> </dev/null \
 
 ---
 
-## 21. cert-manager solver pod stuck in Pending
+## 17. `ai_security_review` job — four consecutive failures
 
-**Symptom**: The HTTP-01 challenge never completed because:
+### 17.1 YAML indentation error
 
-```text
-cm-acme-http-solver-*
-```
+An indentation error in `.gitlab-ci.yml` caused `artifacts.paths` to be incorrectly aligned. This blocked the job before the AI logic itself could run.
 
-remained `Pending`.
+### 17.2 Incorrect authentication token
 
-**Diagnosis**: The same 30-pods-per-node limit described in incident #12 had been reached.
+The raw GitLab OIDC token was sent directly as a `Bearer token` to Foundry. This was incorrect: the GitLab OIDC token is used to prove identity for a federated exchange; it is not itself the final access token for Foundry.
 
-**Fix**: Added a `nodeSelector` / `toleration` targeting the `monitoring` node pool directly in:
+**Fix**: Added an explicit `client_credentials` + `client_assertion` exchange against `login.microsoftonline.com` before calling Foundry.
 
-```yaml
-solvers[].http01.ingress.podTemplate
-```
+### 17.3 API version drift
 
-of the `ClusterIssuer`.
+The API version `2025-05-01` was rejected with `UnsupportedApiVersion` on `/agents/{name}/endpoint/protocols/openai/responses`. The correct value, confirmed against Microsoft's official example for this specific endpoint, was `api-version=v1`.
 
----
-
-## 22. `ai_security_review` job — four consecutive failures
-
-### 22.1 YAML indentation error
-
-An indentation error in `.gitlab-ci.yml` caused:
-
-```text
-artifacts.paths
-```
-
-to be incorrectly aligned.
-
-This blocked the job before the AI logic itself could run.
-
-### 22.2 Incorrect authentication token
-
-The raw GitLab OIDC token was sent directly as a `Bearer token` to Foundry.
-
-This was incorrect: the GitLab OIDC token is used to prove identity for a federated exchange; it is not itself the final access token for Foundry.
-
-**Fix**: Added an explicit `client_credentials` + `client_assertion` exchange against:
-
-```text
-login.microsoftonline.com
-```
-
-before calling Foundry.
-
-### 22.3 API version drift
-
-The following API version:
-
-```text
-2025-05-01
-```
-
-was rejected with:
-
-```text
-UnsupportedApiVersion
-```
-
-on:
-
-```text
-/agents/{name}/endpoint/protocols/openai/responses
-```
-
-The correct value, confirmed against Microsoft's official example for this specific endpoint, was:
-
-```text
-api-version=v1
-```
-
-### 22.4 `context_length_exceeded`
+### 17.4 `context_length_exceeded`
 
 The raw Trivy, SAST, and SBOM reports were sent directly to the model, exceeding its context window.
 
@@ -446,20 +326,15 @@ The raw Trivy, SAST, and SBOM reports were sent directly to the model, exceeding
 
 **Result**: Once all four issues were fixed, the pipeline successfully analyzed a real security result:
 
-- Three **CRITICAL** CVEs were identified in:
-  `org.apache.tomcat.embed:tomcat-embed-core 10.1.55`
-- CVEs:
-  - `CVE-2026-65182`
-  - `CVE-2026-65905`
-  - `CVE-2026-68525`
-- Fixed version:
-  `10.1.58`
+- Three **CRITICAL** CVEs were identified in: `org.apache.tomcat.embed:tomcat-embed-core 10.1.55`
+- CVEs: `CVE-2026-65182`, `CVE-2026-65905`, `CVE-2026-68525`
+- Fixed version: `10.1.58`
 
 The findings were automatically transformed into a structured and prioritized report.
 
 ---
 
-## 23. RBAC gaps discovered under real operating conditions
+## 18. RBAC gaps discovered under real operating conditions
 
 Three read-only permissions were missing and were discovered only when the agent actually needed them during an investigation:
 
@@ -473,117 +348,51 @@ The resulting RBAC policy covers the current read-only surface required for Kube
 
 ---
 
-## 24. Grafana dashboard lost after every restart/rebuild
+## 19. Grafana dashboard lost after every restart/rebuild
 
-**Symptom**: The Grafana dashboard had to be manually re-imported after every Grafana pod restart or cluster rebuild.
+Same underlying "dashboard as code" fix already applied on the main platform project, reapplied here to the agent's own panels: a dashboard imported through the Grafana UI is stored in Grafana's internal SQLite database and doesn't survive the pod lifecycle.
 
-**Diagnosis**: A dashboard imported through the Grafana UI is stored in Grafana's internal database (SQLite by default). It is therefore not version-controlled and is not guaranteed to survive the pod lifecycle.
-
-**Fix**: Converted the dashboard to configuration-as-code using a `ConfigMap` labelled:
-
-```yaml
-grafana_dashboard: "1"
-```
-
-The file:
-
-```text
-grafana-dashboard-configmap.yaml
-```
-
-is version-controlled in Git and automatically loaded by the Grafana sidecar of the `kube-prometheus-stack` chart.
-
-The dashboard, including the new agent-specific panels, now survives a complete:
-
-```text
-terraform destroy
-terraform apply
-```
-
-cycle, confirmed through testing.
+**Fix**: converted the dashboard to a version-controlled `ConfigMap` labelled `grafana_dashboard: "1"`, automatically loaded by the Grafana sidecar. The dashboard, including the agent-specific panels, now survives a full `terraform destroy` / `terraform apply` cycle — confirmed through testing.
 
 ---
 
-## 25. `ai_security_review` job never executed — chained dependencies
+## 20. `ai_security_review` job never executed — chained dependencies
 
 **Symptom**: No agent metrics appeared anywhere, with no visible error.
 
-**Diagnosis**: The `push_to_acr` job had failed because of a temporary network timeout during:
-
-```bash
-az acr login
-```
-
-GitLab's chained `needs` dependencies were:
+**Diagnosis**: The `push_to_acr` job had failed because of a temporary network timeout during `az acr login`. GitLab's chained `needs` dependencies were:
 
 ```text
 sign_and_sbom → push_to_acr
 ai_security_review → sign_and_sbom
 ```
 
-Therefore, GitLab never executed a job whose required dependency had failed.
-
-`ai_security_review` appeared grey (`skipped`) in the pipeline and had never actually run. This was not a script bug.
+Therefore, GitLab never executed a job whose required dependency had failed. `ai_security_review` appeared grey (`skipped`) in the pipeline and had never actually run. This was not a script bug.
 
 **Fix**: Simply rerunning the failed `push_to_acr` job allowed the remaining dependency chain to execute normally.
 
 ---
 
-## 26. Metrics push silently failing
+## 21. Metrics push silently failing
 
-**Symptom**: The `ai_security_review` job succeeded:
+**Symptom**: The `ai_security_review` job succeeded (`STATUS: 200`, `Report generated successfully`), but no metrics ever appeared in Pushgateway.
 
-```text
-STATUS: 200
-Report generated successfully
-```
+**Diagnosis**: The `push_metrics` function did not log anything when environment variables were missing and simply returned. It also did not log successful pushes. As a result, a CI job could succeed while the metrics push had silently been skipped, with no evidence showing what had happened.
 
-but no metrics ever appeared in Pushgateway.
-
-**Diagnosis**: The `push_metrics` function did not log anything when environment variables were missing and simply returned. It also did not log successful pushes.
-
-As a result, a CI job could succeed while the metrics push had silently been skipped, with no evidence showing what had happened.
-
-**Fix**: Added explicit logs such as:
-
-```text
-PUSH METRICS STATUS: ...
-```
-
-to every branch of the function, including both success and failure paths.
-
-There is now no silent failure zone in this step.
+**Fix**: Added explicit logs such as `PUSH METRICS STATUS: ...` to every branch of the function, including both success and failure paths. There is now no silent failure zone in this step.
 
 ---
 
-## 27. Basic Auth password desynchronized after rotation
+## 22. Basic Auth password desynchronized after rotation
 
-**Symptom**: After regenerating the Ingress Basic Auth password, an external `curl` request to Pushgateway returned:
-
-```text
-401 Unauthorized
-```
-
-while internal access through `port-forward` continued to work.
+**Symptom**: After regenerating the Ingress Basic Auth password, an external `curl` request to Pushgateway returned `401 Unauthorized`, while internal access through `port-forward` continued to work.
 
 **Diagnosis**: The same password was used in four distinct locations that had to remain synchronized:
 
-1. Kubernetes secret:
-   ```text
-   mcp-basic-auth
-   ```
-2. GitLab variable:
-   ```text
-   PUSHGATEWAY_AUTH
-   ```
-3. Authorization header configured on the Foundry MCP tool:
-   ```text
-   kubernetes-cluster
-   ```
-4. Authorization header configured on the second Foundry MCP tool:
-   ```text
-   prometheus-metrics
-   ```
+1. Kubernetes secret: `mcp-basic-auth`
+2. GitLab variable: `PUSHGATEWAY_AUTH`
+3. Authorization header on the Foundry MCP tool: `kubernetes-cluster`
+4. Authorization header on the second Foundry MCP tool: `prometheus-metrics`
 
 The password rotation had only been applied to some of these locations.
 
@@ -595,21 +404,9 @@ Verification:
 htpasswd -vb <(kubectl get secret mcp-basic-auth -n ai-agent -o jsonpath='{.data.auth}' | base64 -d) mcp-agent "<mot-de-passe>"
 ```
 
-**Side effect discovered afterwards**: Once Pushgateway authentication was resynchronized, the agent itself started returning:
+**Side effect discovered afterwards**: Once Pushgateway authentication was resynchronized, the agent itself started returning `401 Unauthorized` when accessing its Kubernetes MCP tool — same cause: the Authorization header configured for the Foundry tool still contained the old password. The header was updated for both Foundry tools.
 
-```text
-401 Unauthorized
-```
-
-when accessing its Kubernetes MCP tool.
-
-The cause was the same: the Authorization header configured for the Foundry tool still contained the old password.
-
-The header was updated for both Foundry tools.
-
-**Known limitation / roadmap item**: The shared static Basic Auth credential currently exists in four different locations and has no automated rotation mechanism.
-
-A stronger long-term design would use dedicated credentials per consumer or a managed secret rotation mechanism rather than relying on manual synchronization after every password rotation.
+**Known limitation / roadmap item**: The shared static Basic Auth credential currently exists in four different locations and has no automated rotation mechanism. A stronger long-term design would use dedicated credentials per consumer or a managed secret rotation mechanism rather than relying on manual synchronization after every password rotation.
 
 ---
 
@@ -645,7 +442,7 @@ A stronger long-term design would use dedicated credentials per consumer or a ma
 
 5. **Separate diagnostic layers.** Model rate limits, subscription vCPU quotas, and per-node pod limits are completely independent Azure constraints that can produce superficially similar symptoms ("it doesn't work"). Isolating the affected layer before applying a fix prevents changing the wrong component.
 
-6. **Never rely on unverified syntax, even when similar syntax is documented elsewhere.** The `${SERVICE_ACCOUNT_CLIENT_ID}` attempt in #13 and the Foundry API version changes in #22 demonstrate that a read-only verification before applying a change is cheaper than repeated failed deployments.
+6. **Never rely on unverified syntax, even when similar syntax is documented elsewhere.** The `${SERVICE_ACCOUNT_CLIENT_ID}` attempt in #10 and the Foundry API version changes in #17 demonstrate that a read-only verification before applying a change is cheaper than repeated failed deployments.
 
 7. **A successful CI job does not prove that every internal step actually succeeded.** A silent `return` on partial failure can hide a problem across multiple pipeline runs. Every critical branch should log its result explicitly, including successful execution.
 

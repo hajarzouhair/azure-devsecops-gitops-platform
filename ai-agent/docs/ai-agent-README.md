@@ -14,12 +14,11 @@ The solution is built around **Azure AI Foundry**, with secure access to Azure a
 
 ![Architecture Overview](agent_architecture/architecture_agent.png)
 
-
 The AI Incident Investigator sits on top of the existing Kubernetes platform and connects **Azure AI Foundry**, **Kubernetes tools**, **Prometheus metrics**, **application logs**, and the **project knowledge base** into a single investigation workflow.
 
 The agent therefore provides an intelligent investigation layer above the existing **DevSecOps + GitOps + Observability** platform, while preserving the security boundaries and identity mechanisms already established in the cluster.
 
-# AI Incident Investigation Agent — Complete Technical README
+## AI Incident Investigation Agent — Complete Technical README
 
 This document covers the entire AI/agent portion of the DevSecOps portfolio
 project: scope, architecture, build steps, and every real incident
@@ -110,7 +109,7 @@ policies, or GitOps controls.
 
 | Component | Choice | Why |
 |---|---|---|
-| Model | `gpt-5-mini`, SKU `GlobalStandard` | Cost-efficient, token-based billing. The originally planned `gpt-4o-mini` (SKU `Standard`) was rejected by Azure mid-project — see §6.1 |
+| Model | `gpt-5-mini`, SKU `GlobalStandard` | Cost-efficient, token-based billing. The originally planned `gpt-4o-mini` (SKU `Standard`) was rejected by Azure mid-project — see `ai-agent-troubleshooting.md`, issue #7 |
 | Foundry auth | Azure AD only (`local_auth_enabled = false`) | Consistent with the rest of the project (ACR, Key Vault) — no static API keys |
 | Kubernetes MCP | `containers/kubernetes_mcp_server` (note: underscore in the real image repo, not a hyphen) | Actively maintained, configurable strict read-only mode, explicit denial of `Secret` resources |
 | Prometheus MCP | `pab1it0/prometheus-mcp-server` (pinned version, HTTP transport enabled via env vars) | Read-only by design |
@@ -171,11 +170,12 @@ Agent: k8s-incident-investigator
   protocol correctly.
 - Grounding test: asked the agent about a specific troubleshooting
   entry (the `westeurope` region rejection encountered during initial
-  Terraform provisioning — see §6.7); the agent correctly retrieved
-  the exact symptom (`RequestDisallowedByAzure`) and the fix
-  (switching to `francecentral`) from `troubleshooting.md`, proving
-  the retrieval chain works end-to-end rather than falling back to
-  generic model knowledge.
+  Terraform provisioning — see `ai-agent-troubleshooting.md`, issue #1);
+  the agent correctly retrieved the exact symptom
+  (`RequestDisallowedByAzure`) and the fix (switching to
+  `francecentral`) from `troubleshooting.md`, proving the retrieval
+  chain works end-to-end rather than falling back to generic model
+  knowledge.
 
 ## 6. Troubleshooting log
 
@@ -239,13 +239,22 @@ The `ai_security_review` job:
   Pushgateway, visible in Grafana (see §9).
 
 `container_scan` currently reports but does not hard-block the
-pipeline on findings (`|| true` on the Trivy exit-code check) — this
-was a deliberate temporary choice to capture a real CVE example for
-the AI Security Review without blocking iteration. **This should be
-reverted to a real blocking gate (remove `|| true`) or explicitly
-documented as a permanent, intentional demo choice before treating the
-project as final** — leaving it silently disabled would undermine the
-project's own security narrative.
+pipeline on findings (`|| true` on the Trivy exit-code check). This is
+a **deliberate, temporary exception, not a security regression**, and
+it concerns a different image/vulnerability than the one already
+resolved earlier in the project: in `devsecops-troubleshooting.md`
+(issue #10), the gate correctly blocked the pipeline on an OS-level
+(Alpine) vulnerability, and that image was fixed and rescanned until
+it passed — the gate itself was never weakened there. Here, on a
+separate application dependency, a real, unresolved CVE was found
+(the Tomcat vulnerability analyzed in `ai-agent-troubleshooting.md`,
+issue #17.4) and the `|| true` was added specifically so this finding
+could reach the AI Security Review job as an actual test case for the
+agent, instead of being blocked before the agent ever saw it.
+**This should be reverted to a real blocking gate (remove `|| true`)
+once the agent's diagnostic capability on a live vulnerability has
+been demonstrated** — leaving it silently disabled beyond that point
+would undermine the project's own security narrative.
 
 ## 9. Observability of the agent (Prometheus + Grafana)
 
@@ -284,16 +293,17 @@ after any `terraform destroy` + `apply` cycle, with no manual import
 step — confirmed working, including the agent-specific panels above.
 
 **Known limitation:** only CI-triggered calls are observed; the
-Foundry portal's interactive chat usage is not (see §10.4). And the
+Foundry portal's interactive chat usage is not (see §10). And the
 Basic Auth credential shared by the Ingress now has to stay in sync
 across four separate places — the Kubernetes secret, the
 `PUSHGATEWAY_AUTH` GitLab CI/CD variable, and the `Authorization`
 header configured on **both** Foundry MCP tools
 (`kubernetes-cluster` and `prometheus-metrics`). Rotating it in only
 one location silently breaks the others with a `401` — this was hit
-in practice (see `troubleshooting.md`) and is a legitimate argument
-for a per-consumer credential or a managed secret rotation setup as a
-future improvement, not a one-off mistake to just avoid repeating.
+in practice (see `ai-agent-troubleshooting.md`, issue #22) and is a
+legitimate argument for a per-consumer credential or a managed secret
+rotation setup as a future improvement, not a one-off mistake to just
+avoid repeating.
 
 ## 10. What the agent explicitly does NOT do
 
@@ -321,4 +331,5 @@ future improvement, not a one-off mistake to just avoid repeating.
 - Full agent observability, including interactive portal usage, via
   Application Insights.
 - Expand coverage to a `staging` namespace.
-- Revisit the Trivy blocking gate decision noted in §8.
+- Revert the temporary Trivy `|| true` exception noted in §8 to a real
+  blocking gate.

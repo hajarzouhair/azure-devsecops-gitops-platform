@@ -30,15 +30,50 @@ Real issues encountered while building this project, with root causes and fixes 
 
 ---
 
-## 3. CSI Driver Failing to Authenticate — Multiple Managed Identities
+## 3. Mise en place de Workload Identity pour Key Vault (en 4 étapes)
 
-**Symptom**: a test pod mounting a Key Vault secret stayed stuck in `ContainerCreating`, with `FailedMount`: `ManagedIdentityCredential: ... Multiple user assigned identities exist, please specify the clientId`.
+**Symptom**: la configuration initiale du Key Vault CSI Driver reposait sur `useVMManagedIdentity: "true"` et l'identité du node. Un pod de test montant un secret Key Vault restait bloqué en `ContainerCreating`, avec `FailedMount`: `ManagedIdentityCredential: ... Multiple user assigned identities exist, please specify the clientId`.
 
-**Diagnosis**: the AKS cluster has more than one managed identity attached (the kubelet identity for ACR pulls, and a separate identity auto-created by the Key Vault CSI add-on) — `useVMManagedIdentity: "true"` alone was ambiguous about which to use.
+**Diagnosis**: le cluster AKS portait plusieurs managed identities simultanément (celle du kubelet pour les pulls ACR, et celle auto-créée par l'add-on Key Vault CSI) — l'identité du node n'était pas assez granulaire pour représenter un workload particulier, et le mécanisme ne correspondait pas au modèle Workload Identity finalement retenu.
 
-**Fix**: retrieved the CSI add-on's identity `clientId` via `az aks show --query addonProfiles.azureKeyvaultSecretsProvider.identity.clientId` and set it explicitly as `userAssignedIdentityID` in the `SecretProviderClass`.
+**Fix**, en 4 étapes :
 
-**Lesson**: a cluster can carry multiple managed identities for different add-ons simultaneously — "the managed identity" is not always singular, and authentication config needs to be explicit about which one applies.
+1. **Activer les deux fonctionnalités AKS requises** — l'OIDC issuer seul ne suffit pas ; il faut aussi activer Workload Identity explicitement dans Terraform :
+
+`oidc_issuer_enabled = true`
+`workload_identity_enabled = true`
+
+
+2. **Migrer l'identité du node vers l'identité du workload** — faire porter l'identité sur un Kubernetes ServiceAccount plutôt que sur le node, pour une granularité fine par workload.
+
+3. **Récupérer le `clientId` de l'identité dédiée** à l'add-on Key Vault CSI (`az aks show --query addonProfiles.azureKeyvaultSecretsProvider.identity.clientId`) et le déclarer explicitement comme `userAssignedIdentityID` dans le `SecretProviderClass`, pour lever l'ambiguïté entre les identités multiples.
+
+4. **Configurer le `SecretProviderClass`** pour utiliser le modèle Workload Identity avec les valeurs propres à l'environnement (tenant, identité Azure concernée).
+
+Le flux final obtenu :
+
+Pod
+│
+│ ServiceAccount
+▼
+Workload Identity
+│
+│ OIDC
+▼
+Microsoft Entra ID
+│
+│ Managed Identity
+▼
+Azure Key Vault
+│
+│ secret
+▼
+Secrets Store CSI Driver
+│
+▼
+Pod
+
+**Lesson**: un cluster peut porter plusieurs managed identities pour différents add-ons — "l'identité managée" n'est pas toujours singulière. Une identité attachée au node et une identité attachée au workload répondent à des besoins différents : Workload Identity permet une granularité fine et évite de donner les mêmes privilèges Azure à plusieurs workloads.
 
 ---
 
@@ -52,48 +87,9 @@ Real issues encountered while building this project, with root causes and fixes 
 
 **Lesson**: OIDC n'est pas simplement « activer un token ». La fédération repose sur une correspondance précise entre issuer + subject + audience. Une mauvaise audience ou un mauvais sujet peut rendre un token parfaitement valide inutilisable auprès d'Azure.
 
-## 5. AKS Workload Identity Not Fully Enabled
+---
 
-**Symptom**: après avoir activé `l'OIDC issuer` sur AKS, l'intégration destinée à permettre aux workloads Kubernetes d'utiliser une identité Azure ne fonctionnait pas encore comme prévu.
-
-**Diagnosis**: deux mécanismes différents devaient être activés sur AKS : l'OIDC issuer et Microsoft Entra Workload Identity. L'activation du premier ne suffisait donc pas à elle seule. La configuration Terraform devait refléter explicitement les deux fonctionnalités.
-
-**Fix**: configuration du cluster avec :
-
-`oidc_issuer_enabled       = true`
-`workload_identity_enabled = true`
-
-Puis vérification de l'état réel du cluster avec Azure CLI.
-
-**Lesson**: dans AKS, OIDC issuer et Workload Identity sont complémentaires mais distincts. L'OIDC issuer permet au cluster de fournir l'identité fédérée du workload ; Workload Identity permet ensuite d'utiliser cette fédération pour obtenir une identité Microsoft Entra.
-
-## 6. Migration from Node Managed Identity to Workload Identity
-
-**Symptom**: la configuration initiale du Key Vault CSI Driver reposait sur useVMManagedIdentity: "true" et l'identité du cluster/node. Cette approche devenait problématique dans un cluster possédant plusieurs Managed Identities.
-
-**Diagnosis**: l'identité du nœud n'était pas suffisamment granulaire pour représenter l'identité d'un workload particulier. Plusieurs identités Azure étaient présentes dans le cluster, notamment l'identité utilisée par le kubelet et celle associée au provider Key Vault CSI. Le mécanisme ne correspondait donc pas au modèle d'identité workload que l'architecture devait finalement utiliser.
-
-**Fix**: migration vers Microsoft Entra Workload Identity, en faisant porter l'identité sur un Kubernetes ServiceAccount plutôt que sur l'identité du node.
-
-Le modèle est devenu :
-
-Pod
- ↓
-Kubernetes ServiceAccount
- ↓
-AKS OIDC token
- ↓
-Federated Identity Credential
- ↓
-User Assigned Managed Identity
- ↓
-Microsoft Entra ID
- ↓
-Azure Key Vault
-
-**Lesson**: une identité attachée au node et une identité attachée au workload répondent à des besoins différents. Workload Identity permet une granularité beaucoup plus fine et évite de donner à plusieurs workloads les mêmes privilèges Azure.
-
-## 7. Workload Identity Federation — ServiceAccount / Managed Identity Trust
+## 5. Workload Identity Federation — ServiceAccount / Managed Identity Trust
 
 **Symptom**: après avoir activé Workload Identity, le pod devait encore être explicitement associé à l'identité Azure appropriée pour pouvoir accéder au Key Vault.
 
@@ -111,7 +107,7 @@ Le subject permet notamment d'identifier le ServiceAccount Kubernetes concerné.
 
 **Lesson**: Workload Identity repose sur une relation de confiance explicite. Posséder un ServiceAccount Kubernetes et une Managed Identity Azure ne suffit pas : la fédération entre les deux doit être configurée.
 
-## 8. Key Vault Access — Authentication vs Authorization
+## 6. Key Vault Access — Authentication vs Authorization
 
 **Symptom**: même après avoir mis en place l'identité permettant au workload de s'authentifier auprès d'Azure, l'accès au secret Key Vault nécessitait encore une configuration supplémentaire.
 
@@ -135,42 +131,9 @@ La Managed Identity devait donc recevoir les permissions nécessaires sur le Key
 
 **Lesson**: une authentification réussie ne signifie pas qu'une opération Azure est autorisée. Il faut toujours distinguer identité et permissions.
 
-## 9. Key Vault CSI / Workload Identity Integration
-
-**Symptom**: le workload devait récupérer les secrets stockés dans Azure Key Vault sans stocker de credentials Azure dans Kubernetes.
-
-**Diagnosis**: le Secrets Store CSI Driver intervient après le mécanisme d'identité. Il ne remplace pas Workload Identity : il l'utilise pour permettre au workload d'accéder au fournisseur Azure Key Vault.
-
-Le flux final était :
-
-Pod
- │
- │ ServiceAccount
- ▼
-Workload Identity
- │
- │ OIDC
- ▼
-Microsoft Entra ID
- │
- │ Managed Identity
- ▼
-Azure Key Vault
- │
- │ secret
- ▼
-Secrets Store CSI Driver
- │
- ▼
-Pod
-
-**Fix**: configuration du `SecretProviderClass` pour utiliser le modèle `Workload Identity` et récupération des valeurs propres à l'environnement Azure actuel, notamment le tenant et l'identité Azure concernée.
-
-**Lesson**: il faut séparer les responsabilités : Workload Identity gère l'identité, Azure RBAC gère les permissions et CSI Driver gère la consommation/montage des secrets.
-
 ---
 
-## 10. Trivy Security Gate Blocking the Pipeline
+## 7. Trivy Security Gate Blocking the Pipeline
 
 **Symptom**: `container_scan` failed after enabling `trivy image --exit-code 1 --severity HIGH,CRITICAL`, reporting HIGH vulnerabilities in the Alpine base image (`libexpat`, `p11-kit`, `p11-kit-trust`) while the application JAR itself was clean.
 
@@ -186,7 +149,7 @@ Pod
 
 ---
 
-## 11. CreateContainerConfigError — Non-Numeric User with `runAsNonRoot`
+## 8. CreateContainerConfigError — Non-Numeric User with `runAsNonRoot`
 
 **Symptom**: after the ArgoCD sync, the pod failed to start: `Error: container has runAsNonRoot and image has non-numeric user (spring), cannot verify user is non-root`. As a side effect, the HPA also reported `<unknown>` CPU/memory metrics.
 
@@ -198,7 +161,7 @@ Pod
 
 ---
 
-## 12. Kustomize Load Restriction — Cannot Reference Files Outside Overlay Root
+## 9. Kustomize Load Restriction — Cannot Reference Files Outside Overlay Root
 
 **Symptom**: `kubectl kustomize k8s/overlays/dev` failed: `accumulating resources ... file '.../k8s/security/network-policies/default-deny-all.yaml' is not in or below '.../k8s/overlays/dev': must build at directory`.
 
@@ -210,7 +173,7 @@ Pod
 
 ---
 
-## 13. GitLab CI Bot Token Rejected on Protected Branch
+## 10. GitLab CI Bot Token Rejected on Protected Branch
 
 **Symptom**: the CI job that commits the updated image tag back to the repo failed: `You are not allowed to push code to protected branches on this project. (pre-receive hook declined)` — despite the Project Access Token having `write_repository` scope.
 
@@ -222,7 +185,7 @@ Pod
 
 ---
 
-## 14. Prometheus Showing "No Data" — Missing ServiceMonitor
+## 11. Prometheus Showing "No Data" — Missing ServiceMonitor
 
 **Symptom**: Prometheus had no data at all for the application; even a manually built Grafana panel showed nothing, with no error anywhere.
 
@@ -234,7 +197,7 @@ Pod
 
 ---
 
-## 15. 404 Scraping `/actuator/prometheus`
+## 12. 404 Scraping `/actuator/prometheus`
 
 **Symptom**: once the ServiceMonitor was in place, Prometheus reported `Error scraping target: server returned HTTP status 404`.
 
@@ -252,9 +215,9 @@ Pod
 
 ---
 
-## 16. New Pod Stuck in Pending — Insufficient CPU
+## 13. New Pod Stuck in Pending — Insufficient CPU
 
-**Symptom**: the corrected pod (issue #14) sat `Pending` for 40+ minutes while the older pod kept running.
+**Symptom**: the corrected pod (issue #12) sat `Pending` for 40+ minutes while the older pod kept running.
 
 **Diagnosis**: `kubectl describe pod` showed `0/1 nodes are available: Insufficient cpu`. `kubectl top nodes` confirmed the node pool was near its CPU allocation limit — largely because the observability stack (Prometheus, Grafana, Alertmanager) was competing for capacity on the same node pool as the application at the time.
 
@@ -266,7 +229,8 @@ Pod
 **Lesson**: on a resource-constrained cluster, a `Pending` pod is very often a capacity problem caused by *co-located* workloads rather than the workload itself being misconfigured — isolating observability onto its own node pool resolved the recurring contention rather than just patching the symptom each time.
 
 ---
-## 17. DNS Breakage After Applying `default-deny-all` NetworkPolicy
+
+## 14. DNS Breakage After Applying `default-deny-all` NetworkPolicy
 
 **Symptom**: after applying the default-deny Network Policy, the application pod could no longer resolve any hostname, including internal Kubernetes service names.
 
@@ -278,7 +242,7 @@ Pod
 
 ---
 
-## 18. ArgoCD Application Controller OOMKilled — Stale Sync Status
+## 15. ArgoCD Application Controller OOMKilled — Stale Sync Status
 
 **Symptom**: `portfolio-app-dev` stayed `OutOfSync`/degraded in the ArgoCD UI even though the actual Deployment was healthy. `kubectl get pods -n argocd` showed `argocd-application-controller-0` in a repeated `OOMKilled` crash loop.
 
@@ -290,18 +254,7 @@ Pod
 
 ---
 
-## Summary of key debugging habits reinforced by this project
-
-- Check CRD **label selectors** explicitly (`serviceMonitorSelector`, `ruleSelector`) rather than assuming an applied manifest is automatically "active."
-- When something returns an unexpected HTTP status from inside the cluster, isolate app-level from cluster-level first with a direct `curl`, before touching Kubernetes config.
-- Always confirm **which image tag** is actually deployed before assuming a code fix hasn't worked — `kubectl get pod -o jsonpath` + `git show <tag>:<file>` is a fast way to rule this in or out.
-- Resource contention (`Pending` pods, OOM-killed control-plane components) on a small cluster is often caused by *neighboring* workloads — check `kubectl top nodes` before assuming the workload itself is misconfigured.
-- A default-deny network policy needs DNS allowlisted explicitly, every time.
-- A tool's own status UI (ArgoCD's sync/health) can itself be the thing that's broken — verify the tool's components are healthy before trusting what it reports about something else.
-
----
-
-## 19. Grafana p95 Latency Panel Showing "No Data"
+## 16. Grafana p95 Latency Panel Showing "No Data"
 
 **Symptom**: three of the four panels in the custom Grafana dashboard displayed real data (HTTP request rate, CPU usage, HPA replica count), but "Latence p95" consistently showed "No data".
 
@@ -310,3 +263,20 @@ Pod
 **Fix**: added `management.metrics.distribution.percentiles-histogram.http.server.requests=true` to `application.properties`, then rebuilt/redeployed through the normal CI/CD pipeline.
 
 **Lesson**: a metric endpoint returning `200` with valid Prometheus-formatted output doesn't guarantee every metric a dashboard expects is actually being exported — histogram-based queries (percentiles, quantiles) need buckets explicitly enabled per-metric in Micrometer, they aren't on by default even when the base metric exists.
+
+---
+
+## Summary of key debugging habits reinforced by this project
+
+- Check CRD **label selectors** explicitly (`serviceMonitorSelector`, `ruleSelector`) rather than assuming an applied manifest is automatically
+"active."
+- When something returns an unexpected HTTP status from inside the cluster, isolate app-level from cluster-level first with a direct `curl`, bef
+ore touching Kubernetes config.
+- Always confirm **which image tag** is actually deployed before assuming a code fix hasn't worked — `kubectl get pod -o jsonpath` + `git show <
+tag>:<file>` is a fast way to rule this in or out.
+- Resource contention (`Pending` pods, OOM-killed control-plane components) on a small cluster is often caused by *neighboring* workloads — chec
+k `kubectl top nodes` before assuming the workload itself is misconfigured.
+- A default-deny network policy needs DNS allowlisted explicitly, every time.
+- A tool's own status UI (ArgoCD's sync/health) can itself be the thing that's broken — verify the tool's components are healthy before trusting
+ what it reports about something else.
+
